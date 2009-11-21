@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cd "`dirname $(realpath $0)`"
+
+java -XX:MaxPermSize=16m -XX:NewSize=100m -XX:SurvivorRatio=128 -XX:NewRatio=2 -server -Xms256m -Xmx256m -jar mailindex.jar ~/.mail ~/mail-index 4321
