@@ -62,6 +62,7 @@
       "subject" {:pattern "Subject: " :boost 5}
       "to"      {:pattern "To: "      :boost 2}
       "from"    {:pattern "From: "    :boost 3}
+      "body"    {:pattern nil}
       })
 
 
