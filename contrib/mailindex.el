@@ -35,7 +35,7 @@
     (mapcar (lambda (entry)
               (vector
                (concat server (aref entry 0))
-               (parse-integer (aref entry 1))
+               (string-to-number (aref entry 1))
                (aref entry 2)))
             (car (ignore-errors (read-from-string result))))))
 
