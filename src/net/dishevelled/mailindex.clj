@@ -13,9 +13,10 @@
            (org.apache.lucene.queryParser QueryParser$Operator
                                           MultiFieldQueryParser)
            (java.net ServerSocket)
-           (java.util Calendar Date SimpleTimeZone)
+           (java.util Calendar Date SimpleTimeZone Vector)
            (java.text SimpleDateFormat)
            (java.io File))
+  (:refer-clojure :exclude [line-seq])
   (:use clojure.contrib.duck-streams
         clojure.contrib.str-utils
         clojure.contrib.seq-utils
@@ -23,6 +24,7 @@
   (:gen-class
    :name MailIndex
    :main true))
+
 
 
 
@@ -99,34 +101,65 @@
     (DateTools/dateToString date DateTools$Resolution/DAY)))
 
 
+(def *field-offsets* (atom {}))
+(def *field-cache* (atom {}))
+
+
+(defn field-pool [name store tokenize]
+  (when-not (@*field-offsets* name)
+    (swap! *field-offsets* assoc name 0)
+    (swap! *field-cache* assoc name (Vector.)))
+
+  (while (>= (@*field-offsets* name)
+	     (count (@*field-cache* name)))
+    (.add (@*field-cache* name)
+	  (Field. name "" store tokenize)))
+
+
+  (let [field (.get (@*field-cache* name)
+		    (@*field-offsets* name))]
+    (swap! *field-offsets* update-in [name] inc)
+    field))
+
+
+(defn reset-field-pools []
+  (doseq [name (keys @*field-offsets*)]
+    (swap! *field-offsets* assoc name 0)))
+
+
 (defn tokenized-field [name val]
   "Create a tokenized, stored field."
-  (Field. name val Field$Store/YES Field$Index/TOKENIZED))
+  (doto (field-pool name Field$Store/YES Field$Index/TOKENIZED)
+    (.setValue val)))
 
 
 (defn tokenized-unstored-field [name val]
   "Create a tokenized, stored field."
-  (Field. name val Field$Store/NO Field$Index/TOKENIZED))
+  (doto (field-pool name Field$Store/NO Field$Index/TOKENIZED)
+    (.setValue val)))
 
 
 (defn untokenized-field [name val]
   "Create an untokenized, unstored field."
-  (Field. name val Field$Store/NO Field$Index/UN_TOKENIZED))
+  (doto (field-pool name Field$Store/NO Field$Index/UN_TOKENIZED)
+    (.setValue val)))
 
 
 (defn stored-field [#^String name #^String val]
   "Create a stored, untokenized field."
-  (doto (Field. name val Field$Store/YES Field$Index/UN_TOKENIZED)
-    (.setOmitNorms true)))
+  (doto (field-pool name Field$Store/YES Field$Index/UN_TOKENIZED)
+    (.setOmitNorms true)
+    (.setValue val)))
 
-
-(defn load-body [#^Document doc [line & lines :as body]
+(defn load-body [#^Document doc body
 		 line-count char-count]
-  "Add each line from body into our Lucene document."
   (if (seq body)
-    (do (.add doc (tokenized-unstored-field "body" line))
-        (recur doc lines
-	       (inc line-count) (+ char-count (count line))))
+    (let [lines (take 100 body)
+	  s (str-join "\n" lines)]
+      (do (.add doc (tokenized-unstored-field "body" s))
+	  (recur doc (drop 100 lines)
+		 (+ line-count (count lines))
+		 (count s))))
     (doto doc
       (.add (stored-field "lines" (str line-count)))
       (.add (stored-field "chars" (str char-count))))))
@@ -149,6 +182,11 @@
   doc)
 
 
+(defn line-seq [rdr]
+  (lazy-seq
+    (when-let [line (.readLine rdr)]
+      (cons line (line-seq rdr)))))
+
 (defn parse-message [#^String filename basedir]
   "Produce a Lucene document from an mbox file containing a single message."
   (let [#^Document doc (Document.)
@@ -157,15 +195,16 @@
          (re-seq (re-pattern (str basedir "/*" "(.*?)" "/" "([0-9]+)$"))
                  filename))]
 
+    (reset-field-pools)
+
     (.add doc (stored-field "filename" filename))
     (.add doc (stored-field "num" num))
     (.add doc (stored-field "group" group))
     (.add doc (stored-field "id" (format "%s@%s" num group)))
 
     (with-open [rdr (reader (File. filename))]
-      (let [ls (line-seq rdr)]
-	(load-headers doc (take-while #(not= % "") ls))
-	(load-body doc (drop-while #(not= % "") ls) 0 0)))))
+      (load-headers doc (take-while #(not= % "") (line-seq rdr)))
+      (load-body doc (line-seq rdr) 0 0))))
 
 
 (defn index-message [#^IndexWriter writer msg]
