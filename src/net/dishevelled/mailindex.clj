@@ -163,9 +163,9 @@
     (.add doc (stored-field "id" (format "%s@%s" num group)))
 
     (with-open [rdr (reader (File. filename))]
-      (load-headers doc (take-while #(not= % "") (line-seq rdr)))
-      (load-body doc (drop-while #(not= % "") (line-seq rdr)) 0 0))))
-
+      (let [ls (line-seq rdr)]
+	(load-headers doc (take-while #(not= % "") ls))
+	(load-body doc (drop-while #(not= % "") ls) 0 0)))))
 
 
 (defn index-message [#^IndexWriter writer msg]
