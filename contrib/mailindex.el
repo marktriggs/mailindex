@@ -48,7 +48,8 @@
                            (getf options :subject)
                            (getf options :from)
                            (getf options :date)
-                           (getf options :msgid)
+                           (or (getf options :msgid)
+                               (nnheader-generate-fake-message-id id))
                            nil
                            (getf options :chars)
                            (getf options :lines)
