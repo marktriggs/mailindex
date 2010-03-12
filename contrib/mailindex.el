@@ -23,6 +23,7 @@
 
 
 (require 'nnir)
+(require 'cl)
 
 (defun nnir-run-mst-search (args server group)
   (let ((proc (open-network-stream "mailindex" nil "localhost" 4321))
@@ -36,9 +37,26 @@
               (vector
                (concat server (aref entry 0))
                (string-to-number (aref entry 1))
-               (aref entry 2)))
+               (aref entry 2)
+               (aref entry 3)))
             (car (ignore-errors (read-from-string result))))))
 
+
+(defun nnir-run-mst-nov (art)
+  (destructuring-bind (group id score options) (coerce art 'list)
+    (make-full-mail-header id
+                           (getf options :subject)
+                           (getf options :from)
+                           (getf options :date)
+                           (getf options :msgid)
+                           nil
+                           (getf options :chars)
+                           (getf options :lines)
+                           nil
+                           nil)))
+
+
+(setq nnir-get-article-nov-function 'nnir-run-mst-nov)
 
 (push '(mst nnir-run-mst-search nil)
       nnir-engines)

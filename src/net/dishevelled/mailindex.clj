@@ -44,7 +44,7 @@
   "The port we listen on for search requests")
 
 
-(defvar *hit-count* 50
+(defvar *hit-count* 1000
   "The number of hits to return when searching.")
 
 
@@ -53,16 +53,17 @@
 
 (defvar *parse-rules*
      {
-      "date"    {:pattern "Date: "    :boost 10
+      "date"    {:pattern "date: "    :boost 10
 		 :preprocess #(when-let [date (parse-date %)]
 				(DateTools/dateToString
 				 date
 				 DateTools$Resolution/DAY))}
 
-      "subject" {:pattern "Subject: " :boost 5}
-      "to"      {:pattern "To: "      :boost 2}
-      "from"    {:pattern "From: "    :boost 3}
+      "subject" {:pattern "subject: " :boost 5}
+      "to"      {:pattern "to: "      :boost 2}
+      "from"    {:pattern "from: "    :boost 3}
       "body"    {:pattern nil}
+      "msgid"   {:pattern "message-id: "}
       })
 
 
@@ -99,7 +100,12 @@
 
 
 (defn tokenized-field [name val]
-  "Create a tokenized, unstored field."
+  "Create a tokenized, stored field."
+  (Field. name val Field$Store/YES Field$Index/TOKENIZED))
+
+
+(defn tokenized-unstored-field [name val]
+  "Create a tokenized, stored field."
   (Field. name val Field$Store/NO Field$Index/TOKENIZED))
 
 
@@ -114,12 +120,16 @@
     (.setOmitNorms true)))
 
 
-(defn load-body [#^Document doc [line & lines :as body]]
+(defn load-body [#^Document doc [line & lines :as body]
+		 line-count char-count]
   "Add each line from body into our Lucene document."
   (if (seq body)
-    (do (.add doc (tokenized-field "body" line))
-        (recur doc lines))
-    doc))
+    (do (.add doc (tokenized-unstored-field "body" line))
+        (recur doc lines
+	       (inc line-count) (+ char-count (count line))))
+    (doto doc
+      (.add (stored-field "lines" (str line-count)))
+      (.add (stored-field "chars" (str char-count))))))
 
 
 (defn load-headers [#^Document doc headers]
@@ -128,7 +138,7 @@
     (when-let [[field value]
                (some (fn [[field opts]]
                        (when (and (:pattern opts)
-                                  (.startsWith line
+                                  (.startsWith (.toLowerCase line)
                                                (:pattern opts)))
                          [field ((get opts :preprocess identity)
                                  (.substring line
@@ -154,7 +164,7 @@
 
     (with-open [rdr (reader (File. filename))]
       (load-headers doc (take-while #(not= % "") (line-seq rdr)))
-      (load-body doc (drop-while #(not= % "") (line-seq rdr))))))
+      (load-body doc (drop-while #(not= % "") (line-seq rdr)) 0 0))))
 
 
 
@@ -171,6 +181,7 @@
     (if (.exists index)
       (inc (int (/ (- now index-mtime) 1000 60 60 24)))
       nil)))
+
 
 
 (defn find-updates [basedir offset]
@@ -262,7 +273,10 @@ Any paths contained in `seen-messages' are skipped."
   (map #(let [doc (.doc hits %)]
           [(get-field doc "group")
            (get-field doc "num")
-           (int (* (.score hits %) 100000))])
+           (int (* (.score hits %) 100000))
+	   (mapcat (fn [f] [(keyword f)
+			 (get-field doc f)])
+		["date" "subject" "to" "from" "msgid" "lines" "chars"])])
        (range (.length hits))))
 
 
@@ -350,7 +364,7 @@ matching documents."
                client (.accept server)
                in (reader (.getInputStream client))
                out (writer (.getOutputStream client))]
-       (.println out (prn-str (search indexfile (first (line-seq in)))))
+       (.println out (prn-str (search indexfile (.readLine in))))
      (.flush out))
    (catch Exception e
      (.println System/err e)))
