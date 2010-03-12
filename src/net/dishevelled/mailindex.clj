@@ -17,6 +17,7 @@
            (java.text SimpleDateFormat)
            (java.io File))
   (:refer-clojure :exclude [line-seq])
+  (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
   (:use clojure.contrib.duck-streams
         clojure.contrib.str-utils
         clojure.contrib.seq-utils
@@ -24,8 +25,6 @@
   (:gen-class
    :name MailIndex
    :main true))
-
-
 
 
 (def *date-formatters* 
@@ -88,7 +87,7 @@
 ;;; Message parsing
 
 (defn parse-date [datestring]
-  (some (fn [formatter]
+  (some (fn [#^SimpleDateFormat formatter]
 	  (try
 	   (.parse formatter datestring)
 	   (catch Exception _)))
@@ -101,68 +100,18 @@
     (DateTools/dateToString date DateTools$Resolution/DAY)))
 
 
-(def *field-offsets* (atom {}))
-(def *field-cache* (atom {}))
-
-
-(defn field-pool [name store tokenize]
-  (when-not (@*field-offsets* name)
-    (swap! *field-offsets* assoc name 0)
-    (swap! *field-cache* assoc name (Vector.)))
-
-  (while (>= (@*field-offsets* name)
-	     (count (@*field-cache* name)))
-    (.add (@*field-cache* name)
-	  (Field. name "" store tokenize)))
-
-
-  (let [field (.get (@*field-cache* name)
-		    (@*field-offsets* name))]
-    (swap! *field-offsets* update-in [name] inc)
-    field))
-
-
-(defn reset-field-pools []
-  (doseq [name (keys @*field-offsets*)]
-    (swap! *field-offsets* assoc name 0)))
-
-
-(defn tokenized-field [name val]
-  "Create a tokenized, stored field."
-  (doto (field-pool name Field$Store/YES Field$Index/TOKENIZED)
-    (.setValue val)))
-
-
-(defn tokenized-unstored-field [name val]
-  "Create a tokenized, stored field."
-  (doto (field-pool name Field$Store/NO Field$Index/TOKENIZED)
-    (.setValue val)))
-
-
-(defn untokenized-field [name val]
-  "Create an untokenized, unstored field."
-  (doto (field-pool name Field$Store/NO Field$Index/UN_TOKENIZED)
-    (.setValue val)))
-
-
-(defn stored-field [#^String name #^String val]
-  "Create a stored, untokenized field."
-  (doto (field-pool name Field$Store/YES Field$Index/UN_TOKENIZED)
-    (.setOmitNorms true)
-    (.setValue val)))
-
 (defn load-body [#^Document doc body
 		 line-count char-count]
   (if (seq body)
     (let [lines (take 100 body)
 	  s (str-join "\n" lines)]
-      (do (.add doc (tokenized-unstored-field "body" s))
+      (do (.add doc (fieldpool/tokenized-unstored-field "body" s))
 	  (recur doc (drop 100 lines)
 		 (+ line-count (count lines))
 		 (count s))))
     (doto doc
-      (.add (stored-field "lines" (str line-count)))
-      (.add (stored-field "chars" (str char-count))))))
+      (.add (fieldpool/stored-field "lines" (str line-count)))
+      (.add (fieldpool/stored-field "chars" (str char-count))))))
 
 
 (defn load-headers [#^Document doc headers]
@@ -178,14 +127,16 @@
                                              (inc (. line (indexOf " ")))))]))
                      *parse-rules*)]
       (when value
-	(.add doc (tokenized-field field value)))))
+	(.add doc (fieldpool/tokenized-field field value)))))
   doc)
 
 
-(defn line-seq [rdr]
+;;; Had a few problems with line-seq from clojure.core.  This variant is fully-lazy.
+(defn line-seq [#^java.io.BufferedReader rdr]
   (lazy-seq
     (when-let [line (.readLine rdr)]
       (cons line (line-seq rdr)))))
+
 
 (defn parse-message [#^String filename basedir]
   "Produce a Lucene document from an mbox file containing a single message."
@@ -195,14 +146,14 @@
          (re-seq (re-pattern (str basedir "/*" "(.*?)" "/" "([0-9]+)$"))
                  filename))]
 
-    (reset-field-pools)
+    (fieldpool/reset)
 
-    (.add doc (stored-field "filename" filename))
-    (.add doc (stored-field "num" num))
-    (.add doc (stored-field "group" group))
-    (.add doc (stored-field "id" (format "%s@%s" num group)))
+    (.add doc (fieldpool/stored-field "filename" filename))
+    (.add doc (fieldpool/stored-field "num" num))
+    (.add doc (fieldpool/stored-field "group" group))
+    (.add doc (fieldpool/stored-field "id" (format "%s@%s" num group)))
 
-    (with-open [rdr (reader (File. filename))]
+    (with-open [#^java.io.BufferedReader rdr (reader (File. filename))]
       (load-headers doc (take-while #(not= % "") (line-seq rdr)))
       (load-body doc (line-seq rdr) 0 0))))
 
@@ -321,7 +272,7 @@ Any paths contained in `seen-messages' are skipped."
 
 (defn normalcase [s]
   "Normalise the case of a query string."
-  (reduce (fn [s op]
+  (reduce (fn [#^String s #^String op]
             (.replaceAll s (str " " op " ") (str " " (. op toUpperCase) " ")))
           (.replaceAll (.toLowerCase s)
                        "\\[([0-9*]+) to ([0-9*]+)\\]"
