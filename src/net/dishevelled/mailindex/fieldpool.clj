@@ -1,7 +1,7 @@
 (ns net.dishevelled.mailindex.fieldpool
   (:import (org.apache.lucene.document Field Field$Store Field$Index)))
 
-(def *field-pools* (atom {}))
+(def *field-pools* (ref {}))
 
 (defn- new-pool [name store tokenize]
   "Create a new pool of Field objects for a given field type."
@@ -19,8 +19,9 @@
 
 (defn- make-field [name store tokenize]
   "Return a new field object."
-  (when-not (@*field-pools* name)
-    (swap! *field-pools* assoc name (new-pool name store tokenize)))
+  (dosync
+   (when-not (@*field-pools* name)
+     (alter *field-pools* assoc name (new-pool name store tokenize))))
 
   (next-field (@*field-pools* name)))
 
