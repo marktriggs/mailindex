@@ -27,6 +27,11 @@
    :main true))
 
 
+(def *date-output-format*
+     (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
+       (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
+
+
 (def *date-formatters* 
      (map #(doto (SimpleDateFormat. %)
 	     (.setTimeZone (SimpleTimeZone. 0 "UTF")))
@@ -264,9 +269,12 @@ Any paths contained in `seen-messages' are skipped."
           [(get-field doc "group")
            (get-field doc "num")
            (int (* (.score hits %) 100000))
-	   (mapcat (fn [f] [(keyword f)
-			 (get-field doc f)])
-		["date" "subject" "to" "from" "msgid" "lines" "chars"])])
+	   (concat [:date
+		    (.format *date-output-format*
+			     (DateTools/stringToDate (get-field doc "date")))]
+		   (mapcat (fn [f] [(keyword f)
+				    (get-field doc f)])
+			   ["subject" "to" "from" "msgid" "lines" "chars"]))])
        (range (.length hits))))
 
 
