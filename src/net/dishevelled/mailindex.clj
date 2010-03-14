@@ -242,9 +242,9 @@ Any paths contained in `seen-messages' are skipped."
              (chatty (format-status (/ msgcount (count to-index))
                                     mps
                                     filename)
-                     (try (index-message writer (parse-message filename basedir))
-                          (catch java.io.FileNotFoundException e
-                            (.println System/err "Oops.  Lost it")))))
+	       (try (index-message writer (parse-message filename basedir))
+		    (catch java.io.FileNotFoundException e
+		      (.println System/err "Oops.  Lost it")))))
            (when (seq fss)
              (recur fss
                     (+ msgcount (count fileset))
@@ -254,8 +254,8 @@ Any paths contained in `seen-messages' are skipped."
 
        (when optimise
          (chatty "Optimising"
-                 (find-deletes index writer)
-                 (.optimize writer true)))
+	   (find-deletes index writer)
+	   (.optimize writer true)))
        (clojure.set/union updates seen-messages)))
    (catch Exception e
      (.println System/err (str "Agent got exception: " e))
@@ -270,8 +270,9 @@ Any paths contained in `seen-messages' are skipped."
            (get-field doc "num")
            (int (* (.score hits %) 100000))
 	   (concat [:date
-		    (.format *date-output-format*
-			     (DateTools/stringToDate (get-field doc "date")))]
+		    (when (get-field doc "date")
+		      (.format *date-output-format*
+			       (DateTools/stringToDate (get-field doc "date"))))]
 		   (mapcat (fn [f] [(keyword f)
 				    (get-field doc f)])
 			   ["subject" "to" "from" "msgid" "lines" "chars"]))])
@@ -365,7 +366,8 @@ matching documents."
        (.println out (prn-str (search indexfile (.readLine in))))
      (.flush out))
    (catch Exception e
-     (.println System/err e)))
+     (.println System/err e)
+     (.printStackTrace e)))
   (send-off *agent* handle-searches indexfile port))
 
 
