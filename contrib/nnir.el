@@ -1,7 +1,7 @@
 ;;; nnir.el --- search mail with various search engines -*- coding: iso-8859-1 -*-
 
 ;; Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-;;   2007, 2008, 2009 Free Software Foundation, Inc.
+;;   2007, 2008, 2009, 2010 Free Software Foundation, Inc.
 
 ;; Author: Kai Groﬂjohann <grossjohann@ls6.cs.uni-dortmund.de>
 ;; Swish-e and Swish++ backends by:
@@ -358,7 +358,7 @@
 (defvar nnir-imap-search-argument-history ()
   "The history for querying search options in nnir")
 
-(defvar nnir-get-article-nov-function nil
+(defvar nnir-get-article-nov-override-function nil
   "If non-nil, a function that will be passed each search result.  This
 should return a message's headers in NOV format.
 
@@ -787,11 +787,13 @@ and show thread that contains this article."
 	(nnir-possibly-change-server server)
         (let ((gnus-override-method
 	       (gnus-server-to-method server)))
-          (setq novitem (and nnir-get-article-nov-function
-                             (funcall nnir-get-article-nov-function
-                                      artitem)))
-          (unless novitem
-	    (case (setq foo (gnus-retrieve-headers (list artno) artfullgroup nil))
+	  ;; if nnir-get-article-nov-override-function is set, use it
+	  (if nnir-get-article-nov-override-function
+	      (setq novitem (funcall nnir-get-article-nov-override-function
+				     artitem))
+	  ;; else, set novitem through nnheader-parse-nov/nnheader-parse-head
+	    (case (setq foo (gnus-retrieve-headers (list artno) 
+						   artfullgroup nil))
 	      (nov
 	       (goto-char (point-min))
 	       (setq novitem (nnheader-parse-nov))

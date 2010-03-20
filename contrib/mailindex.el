@@ -57,7 +57,7 @@
                            nil)))
 
 
-(setq nnir-get-article-nov-function 'nnir-run-mst-nov)
+(setq nnir-get-article-nov-override-function 'nnir-run-mst-nov)
 
 (push '(mst nnir-run-mst-search nil)
       nnir-engines)
