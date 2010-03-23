@@ -12,11 +12,10 @@
            (org.apache.lucene.store FSDirectory)
            (org.apache.lucene.queryParser QueryParser$Operator
                                           MultiFieldQueryParser)
-           (java.net ServerSocket)
+           (java.net ServerSocket InetAddress BindException)
            (java.util Calendar Date SimpleTimeZone Vector)
            (java.text SimpleDateFormat)
-           (java.io File))
-  (:refer-clojure :exclude [line-seq])
+           (java.io File PushbackReader))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
   (:use clojure.contrib.duck-streams
         clojure.contrib.str-utils
@@ -27,58 +26,44 @@
    :main true))
 
 
+
 (def *date-output-format*
      (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
        (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
 
 
-(def *date-formatters* 
+(def *date-formatters*
      (map #(doto (SimpleDateFormat. %)
-	     (.setTimeZone (SimpleTimeZone. 0 "UTF")))
-	  ["EEE, dd MMM yyyy"
-	   "dd MMM yyyy"
-	   "E d MMM yyyy"
-	   "yyyy-MM-dd"
-	   "EEE, MMM d yyyy"
-	   "E, M d yyyy"]))
+             (.setTimeZone (SimpleTimeZone. 0 "UTF")))
+          ["EEE, dd MMM yyyy"
+           "dd MMM yyyy"
+           "E d MMM yyyy"
+           "yyyy-MM-dd"
+           "EEE, MMM d yyyy"
+           "E, M d yyyy"]))
 
 
-(defvar *index-delay* 60000
-  "The number of milliseconds between indexing rounds.")
-
-(defvar *server-port* 4321
-  "The port we listen on for search requests")
-
-
-(defvar *hit-count* 1000
-  "The number of hits to return when searching.")
+;;; Bound in (main)
+(def *config* nil)
 
 
 (declare parse-date)
 
 
 (defvar *parse-rules*
-     {
-      "date"    {:pattern "date: "    :boost 10
-		 :preprocess #(when-let [date (parse-date %)]
-				(DateTools/dateToString
-				 date
-				 DateTools$Resolution/DAY))}
+  {
+   "date"    {:pattern "date: "    :boost 10
+              :preprocess #(when-let [date (parse-date %)]
+                             (DateTools/dateToString
+                              date
+                              DateTools$Resolution/DAY))}
 
-      "subject" {:pattern "subject: " :boost 5}
-      "to"      {:pattern "to: "      :boost 2}
-      "from"    {:pattern "from: "    :boost 3}
-      "body"    {:pattern nil}
-      "msgid"   {:pattern "message-id: "}
-      })
-
-
-(defvar *max-size* (* 10 1024 1024)
-  "The maximum size (in bytes) that a message can be before being ignored.")
-
-
-(defvar *optimise-hour* 4
-  "The hour of the day we're allowed to optimise")
+   "subject" {:pattern "subject: " :boost 5}
+   "to"      {:pattern "to: "      :boost 2}
+   "from"    {:pattern "from: "    :boost 3}
+   "body"    {:pattern nil}
+   "msgid"   {:pattern "message-id: "}
+   })
 
 
 ;;; Utility functions
@@ -88,30 +73,32 @@
   (first (.getValues doc field)))
 
 
+(defmacro chatty [msg & body]
+  `(do (.print System/err (format "\r%-72.65s" ~msg))
+       (do ~@body)))
+
 
 ;;; Message parsing
 
-(defn parse-date [datestring]
+(defn parse-date
+  "Turn `datestring' into a Date object by any means necessary!"
+  [datestring]
   (some (fn [#^SimpleDateFormat formatter]
-	  (try
-	   (.parse formatter datestring)
-	   (catch Exception _)))
-	*date-formatters*))
+          (try
+           (.parse formatter datestring)
+           (catch Exception _)))
+        *date-formatters*))
 
 
-(defn process-date [datestring]
-  "Convert a date string from a message into something we can index."
-  (when-let [date (parse-date datestring)]
-    (DateTools/dateToString date DateTools$Resolution/DAY)))
-
-
-(defn load-body [#^Document doc body
-		 line-count char-count]
+(defn load-body
+  "Load the contents of the `body` seq into a Lucene `doc'.
+Also adds fields for the line and character count of the message."
+  [#^Document doc body line-count char-count]
   (if (seq body)
-    (let [lines (take 100 body)
-	  s (str-join "\n" lines)]
+    (let [lines (take 50 body)
+          s (str-join "\n" lines)]
       (do (.add doc (fieldpool/tokenized-unstored-field "body" s))
-	  (recur doc (drop 100 lines)
+          (recur doc (drop 50 body)
 		 (+ line-count (count lines))
 		 (count s))))
     (doto doc
@@ -119,9 +106,10 @@
       (.add (fieldpool/stored-field "chars" (str char-count))))))
 
 
-(defn load-headers [#^Document doc headers]
-  "Add any interesting mail headers to our Lucene document."
-  (doseq [#^String line headers]
+(defn load-headers
+  "Add interesting mail headers to Lucene `doc'."
+  [#^Document doc lines]
+  (doseq [#^String line (take-while #(not= % "") lines)]
     (when-let [[field value]
                (some (fn [[field opts]]
                        (when (and (:pattern opts)
@@ -132,155 +120,172 @@
                                              (inc (. line (indexOf " ")))))]))
                      *parse-rules*)]
       (when value
-	(.add doc (fieldpool/tokenized-field field value)))))
-  doc)
+        (.add doc (fieldpool/tokenized-field field value)))))
+  lines)
 
 
-;;; Had a few problems with line-seq from clojure.core.  This variant is fully-lazy.
-(defn line-seq [#^java.io.BufferedReader rdr]
-  (lazy-seq
-    (when-let [line (.readLine rdr)]
-      (cons line (line-seq rdr)))))
-
-
-(defn parse-message [#^String filename basedir]
-  "Produce a Lucene document from an mbox file containing a single message."
-  (let [#^Document doc (Document.)
-        [whole group num]
-        (first
-         (re-seq (re-pattern (str basedir "/*" "(.*?)" "/" "([0-9]+)$"))
-                 filename))]
+(defn parse-message
+  "Produce a Lucene document from an email message."
+  [msg connection]
+  (let [#^Document doc (Document.)]
 
     (fieldpool/reset)
 
-    (.add doc (fieldpool/stored-field "filename" filename))
-    (.add doc (fieldpool/stored-field "num" num))
-    (.add doc (fieldpool/stored-field "group" group))
-    (.add doc (fieldpool/stored-field "id" (format "%s@%s" num group)))
+    (let [source (-> @connection :config :name)]
+      (.add doc (fieldpool/stored-field "group" (-> msg :id :group)))
+      (.add doc (fieldpool/stored-field "num" (-> msg :id :num)))
+      (.add doc (fieldpool/stored-field "source" source))
+      (.add doc (fieldpool/stored-field "id"
+                                        (format "%s/%s@%s"
+                                                (-> msg :id :group)
+                                                (-> msg :id :num)
+                                                source))))
 
-    (with-open [#^java.io.BufferedReader rdr (reader (File. filename))]
-      (load-headers doc (take-while #(not= % "") (line-seq rdr)))
-      (load-body doc (line-seq rdr) 0 0))))
+    (load-body doc
+               (load-headers doc (:lines msg))
+               0 0)
+    doc))
 
 
-(defn index-message [#^IndexWriter writer msg]
+
+;;; Lucene indexing
+
+(defn index-message
   "Index a message and add it to an IndexWriter."
+  [#^IndexWriter writer msg]
   (.updateDocument writer (Term. "id" (get-field msg "id")) msg))
 
 
-(defn index-age [indexfile]
-  "Return the mtime of an index."
+(defn index-age
+  "Return the mtime of a Lucene index."
+  [indexfile]
   (let [index (File. (str indexfile "/segments.gen"))
-        index-mtime (.lastModified (File. (str indexfile "/segments.gen")))
-        now (.getTime (Date.))]
+        index-mtime (.lastModified (File. (str indexfile "/segments.gen")))]
     (if (.exists index)
-      (inc (int (/ (- now index-mtime) 1000 60 60 24)))
+      index-mtime
       nil)))
 
 
-
-(defn find-updates [basedir offset]
-  "Find any messages that have been updated in the last `offset' days."
-  (let [cmd ["find" basedir "-type" "f"]
-        cmd (if offset (concat cmd ["-mtime" (str "-" offset)]) cmd)]
-    (set (filter #(re-find #"/[0-9]+$" %)
-                 (line-seq (reader (.. Runtime
-                                       getRuntime
-                                       (exec (into-array cmd))
-                                       getInputStream)))))))
-
-
-(defmacro chatty [msg & body]
-  `(do (.print System/err (format "\r%-72.65s" ~msg))
-       (do ~@body)))
+(defmacro with-writer
+  "Open a Lucene IndexWriter on `index' bound to `var' and evaluate `body'"
+  [index var & body]
+  `(do
+     (IndexWriter/unlock (FSDirectory/getDirectory ~index))
+     (with-open [#^IndexWriter ~var
+                 (doto (IndexWriter.
+                        ~index
+                        (StandardAnalyzer.)
+                        IndexWriter$MaxFieldLength/UNLIMITED)
+                   (.setRAMBufferSizeMB 20)
+                   (.setUseCompoundFile false))]
+       ~@body)))
 
 
-(defn find-deletes [index writer]
-  "Scan our index for any messages that no longer exist."
+(defn do-deletes
+  "Remove any deletes messages from `index'"
+  [connection index]
   (with-open [reader #^IndexReader (IndexReader/open index)]
-      (dotimes [docnum (.maxDoc reader)]
-          (when (not (.isDeleted reader docnum))
-            (let [doc (.document reader docnum)
-                  filename (get-field doc "filename")]
-              (when (not (.exists (File. filename)))
-                (.println System/err (str "Removing from index: " filename))
-                (.deleteDocuments writer (Term. "filename" filename))))))))
+    (with-writer index writer
+      (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
+        (let [doclist (into {}
+                            (for [id chunk
+                                  :when (not (.isDeleted reader id))
+                                  :let [doc (.document reader id)]]
+                              [{:group (get-field doc "group")
+                                :num (get-field doc "num")}
+                               (get-field doc "id")]))
+              deletes ((:deleted-messages-fn @connection)
+                       connection (keys doclist))]
+          (doseq [d deletes]
+            (.println System/err (str "Deleting from index: " (doclist d)))
+            (.deleteDocuments writer (Term. "id" (doclist d)))))))))
 
 
-(defn format-status [percent-complete mps filename]
-  (format "(%.2f%% %s msgs/s) Indexing %s"
-          (float (* percent-complete
-                    100))
-          (if mps
-            (format "%.2f" (float mps))
-            "?")
-          filename))
+(defn do-optimize
+  "Optimize `index'"
+  [index]
+  (with-writer index iw
+    (.optimize iw)))
 
 
-(defn index [basedir index optimise seen-messages]
-  "Adds any modified messages from `basedir' to `index'.
-If optimise is true, optimise the index once this is done.
-Any paths contained in `seen-messages' are skipped."
+(defn index
+  "Adds `messages' to an index using IndexWriter `iw'."
+  [connection messages iw & [cnt starttime]]
+  (let [cnt (or cnt 0)
+        starttime (or starttime (System/currentTimeMillis))]
+    (when (seq messages)
+      (try
+       (when (zero? (mod cnt 1000))
+         (.println System/err
+		   (format "\nmsgs/sec: %.2f"
+			   (float (/ cnt
+				     (inc (/ (- (System/currentTimeMillis)
+						starttime)
+					     1000)))))))
+       (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
+               (index-message iw (parse-message (first messages) connection)))
+       (recur connection (rest messages) iw [(inc (or cnt 0)) starttime])
+       (catch Exception e
+         (.println System/err (str "Agent got exception: " e))
+	 (.printStackTrace e))
+       (catch Error e
+         (.println System/err (str "Agent got error: " e))
+	 (.printStackTrace e))))))
+
+
+
+(defn time-to-optimise?
+  "True if the current time of day is a good time to optimise."
+  []
+  (let [hour (.. Calendar getInstance (get Calendar/HOUR_OF_DAY))]
+    (= hour (:optimize-hour *config*))))
+
+
+(defn start-indexing
+  "Kick off the indexer."
+  [state indexfile connections]
   (try
-   (IndexWriter/unlock (FSDirectory/getDirectory index))
-   (let [updates (find-updates basedir (index-age index))
-         to-index (clojure.set/difference
-                   updates
-                   seen-messages)]
-     (with-open [#^IndexWriter writer (doto (IndexWriter.
-                                             index
-                                             (StandardAnalyzer.)
-                                             IndexWriter$MaxFieldLength/UNLIMITED)
-                                        (.setRAMBufferSizeMB 20)
-                                        (.setUseCompoundFile false))]
-
-       (loop [[fileset & fss] (partition-all 1000 to-index)
-              msgcount 0
-              mps nil]
-         (let [start (System/currentTimeMillis)]
-           (doseq [#^String filename fileset]
-             (chatty (format-status (/ msgcount (count to-index))
-                                    mps
-                                    filename)
-	       (try (index-message writer (parse-message filename basedir))
-		    (catch java.io.FileNotFoundException e
-		      (.println System/err "Oops.  Lost it")))))
-           (when (seq fss)
-             (recur fss
-                    (+ msgcount (count fileset))
-                    (/ (count fileset)
-                       (/ (- (System/currentTimeMillis) start)
-                          1000))))))
-
-       (when optimise
-         (chatty "Optimising"
-	   (find-deletes index writer)
-	   (.optimize writer true)))
-       (clojure.set/union updates seen-messages)))
+   (let [last-update (index-age indexfile)]
+     (doseq [connection connections]
+       (with-writer indexfile iw
+         (index connection
+                ((:new-messages-fn @connection) connection last-update)
+                iw)))
+     (when (time-to-optimise?)
+       (doseq [connection connections]
+         (do-deletes connection indexfile))
+       (do-optimize indexfile)))
+   (Thread/sleep (:reindex-frequency *config*))
    (catch Exception e
-     (.println System/err (str "Agent got exception: " e))
-     seen-messages)))
+     (.println System/err e)
+     (.printStackTrace e)))
+  (send-off *agent* start-indexing indexfile connections))
+
 
 
 ;;; Query handling
-(defn result-seq [hits]
+
+(defn result-seq
   "Returns a lazy seq of a Lucene Hits object."
+  [hits]
   (map #(let [doc (.doc hits %)]
           [(get-field doc "group")
            (get-field doc "num")
            (int (* (.score hits %) 100000))
-	   (concat [:date
-		    (when (get-field doc "date")
-		      (.format *date-output-format*
-			       (DateTools/stringToDate (get-field doc "date"))))]
-		   (mapcat (fn [f] [(keyword f)
-				    (get-field doc f)])
-			   ["subject" "to" "from" "msgid" "lines" "chars"]))])
+           (concat
+            [:date
+             (when (get-field doc "date")
+               (.format *date-output-format*
+                        (DateTools/stringToDate (get-field doc "date"))))]
+            (mapcat (fn [f] [(keyword f)
+                             (get-field doc f)])
+                    ["subject" "to" "from" "msgid" "lines" "chars"]))])
        (range (.length hits))))
 
 
-(defn normalcase [s]
+(defn normalcase
   "Normalise the case of a query string."
+  [s]
   (reduce (fn [#^String s #^String op]
             (.replaceAll s (str " " op " ") (str " " (. op toUpperCase) " ")))
           (.replaceAll (.toLowerCase s)
@@ -289,8 +294,9 @@ Any paths contained in `seen-messages' are skipped."
           ["and" "or" "not"]))
 
 
-(defn build-query [querystr reader]
+(defn build-query
   "Construct a Lucene query from `querystr'."
+  [querystr reader]
   (let [query (BooleanQuery.)
         all-fields (.parse (doto (MultiFieldQueryParser.
                                       (into-array (keys *parse-rules*))
@@ -326,57 +332,54 @@ Any paths contained in `seen-messages' are skipped."
     query))
 
 
-(defn search [index querystr]
+(defn search
   "Perform a search against `index' using `querystr'.  Returns the top
 matching documents."
+  [index querystr]
   (with-open [reader (IndexReader/open index)
               searcher (IndexSearcher. reader)]
-    (doall (take *hit-count*
+    (doall (take (:max-results *config*)
                  (result-seq (.search searcher
                                       (build-query querystr reader)))))))
 
 
-(defn time-to-optimise? []
-  "True if the current time of day is a good time to optimise."
-  (let [hour (.. Calendar getInstance (get Calendar/HOUR_OF_DAY))]
-    (= hour *optimise-hour*)))
-
-
-(defn start-indexing
-  "Kick off the indexer."
-  ([state maildir indexfile]
-     (start-indexing state maildir indexfile #{}))
-  ([state maildir indexfile seen-messages]
-     (let [new-seen (index maildir
-                           indexfile
-                           (time-to-optimise?)
-                           seen-messages)]
-       (Thread/sleep *index-delay*)
-       (send-off *agent* start-indexing maildir indexfile new-seen))))
-
-
-
-(defn handle-searches [state indexfile port]
+(defn handle-searches
   "Kick off the search handler."
+  [state indexfile port]
   (try
-   (with-open [server (ServerSocket. port)
+   (.println System/err (format "Listening for searches on port %d" port))
+   (with-open [server (ServerSocket. port 50 (InetAddress/getByName "127.0.0.1"))
                client (.accept server)
                in (reader (.getInputStream client))
                out (writer (.getOutputStream client))]
-       (.println out (prn-str (search indexfile (.readLine in))))
+     (.println out (prn-str (search indexfile (.readLine in))))
      (.flush out))
+
+   (catch BindException e
+     (throw (RuntimeException. e)))
    (catch Exception e
      (.println System/err e)
      (.printStackTrace e)))
   (send-off *agent* handle-searches indexfile port))
 
 
+
+;;; The main bit...
+
 (defn -main [& args]
-  (if (empty? args)
-    (println "Usage: mailindex.clj <mail directory> <index file> <listen port>")
-    (let [[maildir indexfile port] args
-	  indexer (agent nil)
-	  searcher (agent nil)]
-      (send-off indexer start-indexing maildir indexfile)
-      (send-off searcher handle-searches indexfile (Integer. port))
-      (await indexer searcher))))
+  (alter-var-root #'*config* (fn [_] (read (PushbackReader. (reader "config.clj")))))
+  (let [{:keys [port indexfile]} *config*
+	connections (map (fn [b]
+			   (require (:backend b))
+			   (let [conn (@(ns-resolve (:backend b)
+						    'get-connection)
+				       b)]
+			     (swap! conn assoc :config b)
+			     conn))
+			 (:backends *config*))
+	searcher (agent nil)
+	indexer (agent nil)]
+
+    (send-off searcher handle-searches indexfile (Integer. port))
+    (send-off indexer start-indexing indexfile connections)
+    (await indexer searcher)))

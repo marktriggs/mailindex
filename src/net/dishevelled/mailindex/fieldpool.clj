@@ -29,7 +29,11 @@
 (defn reset []
   "Mark all Field objects as available for re-use."
   (doseq [pool (vals @*field-pools*)]
+    (when (> (:next-available @pool) 100)
+      (println "Pool size got to:" (:next-available @pool)))
     (dosync
+     (doseq [field (take (:next-available @pool) (:fields @pool))]
+       (.setValue field nil))
      (alter pool assoc :next-available 0))))
 
 

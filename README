@@ -1,9 +1,6 @@
 This is a Lucene-based mail indexer that can be used with Gnus and
 nnir.el--the first non-trivial Clojure program I wrote.  Ah, memories.
-
-It's probably still rough around the edges, but I thought I'd plonk it
-here on the off-change it's useful.  It at least shows how you can use
-Lucene from Clojure without too much trouble.
+Having really fast search over all of your mail is hard to beat.
 
 
 Building it
@@ -21,10 +18,15 @@ The usual steps:
 Running it
 ----------
 
-Have a look at the included "mailindex" shell script--that's how I run
-mine.  You run it with three arguments: the location of your (nnml)
-maildir, the directory to store your Lucene indexes in, and the port to
-listen on.
+You will need to define your own "config.clj" file--mine is included for
+reference.  This contains global options (which port to listen on, where
+to store your Lucene indexes, etc.) as well as a list of backends that
+will be scanned for messages.  I use Gnus's nnml backend, so that should
+work out of the box, but you can add other backends by adding more
+files.  Just use nnml.clj as a guide.
+
+To run the thing, see the "mailindex" shell script--that's how I run
+mine.
 
 The first time you run mailindex it will run off and index all of your
 mail.  Once it has finished this, you can search it just by telnetting
@@ -37,20 +39,16 @@ to its port and typing your query.  For example:
 
   from:triggs clojure
 
-  (["misc" "6888" 18178] ["misc" "7237" 14001] ["misc" "7440" 14001]
-   ["misc" "6908" 13526] ["misc" "6914" 9401] ["misc" "7598" 6751]
-   ["work" "76803" 6751] ["misc" "6877" 6031] ["misc" "7647" 5857]
-   ["misc" "5456" 5696] ["work" "25454" 5696] ["misc" "7657" 5696]
-   ["misc" "6878" 5554] ["misc" "7359" 5494] ["misc" "5645" 5169]
-   ["work" "38731" 5169] ["work" "55885" 4725] ["misc" "6666" 4725]
-   ["misc" "5552" 4686] ["misc" "5571" 4641] ["work" "33614" 4377]
-   ["posted" "311" 4377] ["misc" "7615" 4327] ["misc" "6876" 4138]
-   ["misc" "7250" 4114] ["work" "56007" 3586] ["misc" "6675" 3586]
-   ["posted" "309" 3586] ["misc" "7541" 3502] ["work" "74509" 3502])
+  (["misc" "6888" 18178 <headers>] ["misc" "7237" 14001 <headers>]
+   ["misc" "7440" 14001 <headers>] ["misc" "6908" 13526 <headers>]
+   ["misc" "69914" 9401 <headers>] ["misc" "7598" 6751 <headers>]
+   ["work" "76803" 6751 <headers>] ["misc" "6877" 6031 <headers>]
+   ["misc" "75410" 3502 <headers>] ["work" "74509" 3502 <headers>])
 
-Mailindex returns a bunch of triples representing matching messages.
-These consist of: the group of the message, the message number, and the
-relevance score.  Results are sorted in descending order of relevance.
+Mailindex returns a bunch of 4-tuples representing matching messages.
+These consist of: the group of the message, the message number, the
+relevance score, and the message headers.  Results are sorted in
+descending order of relevance.
 
 
 Integrating with Gnus/nnir
@@ -60,14 +58,18 @@ Integrating with Gnus/nnir
 with Gnus.  Put this into your emacs load-path, add (require 'mailindex)
 to your ~/.emacs, and then hitting 'G G' from Gnus's group buffer should
 prompt you for a query string, fire off a search and display an
-ephemeral group with matching results.
+ephemeral group with matching results.  I submitted a patch to nnir.el
+to have it pull the headers straight from the data returned (which is
+much faster than hitting the disk), but you can also grab nnir.el from
+the "contrib" directory if you're not using a recent version of Gnus.
 
 
 The query syntax
 ----------------
 
 Query syntax is Lucene's standard syntax, although I do attempt to be
-clever and munge queries on the fly.  Some examples:
+clever and munge queries on the fly to improve the result ordering.
+Some examples:
 
   # Messages with a sender containing 'triggs' and the word 'clojure
   # anywhere
