@@ -6,7 +6,7 @@
 (defn- new-pool [name store tokenize]
   "Create a new pool of Field objects for a given field type."
   (ref {:next-available 0
-	:fields (repeatedly #(Field. name "" store tokenize))}))
+        :fields (repeatedly #(Field. name "" store tokenize))}))
 
 
 (defn- next-field [pool]
@@ -29,8 +29,6 @@
 (defn reset []
   "Mark all Field objects as available for re-use."
   (doseq [pool (vals @*field-pools*)]
-    (when (> (:next-available @pool) 100)
-      (println "Pool size got to:" (:next-available @pool)))
     (dosync
      (doseq [field (take (:next-available @pool) (:fields @pool))]
        (.setValue field nil))
