@@ -99,8 +99,8 @@ Also adds fields for the line and character count of the message."
           s (str-join "\n" lines)]
       (do (.add doc (fieldpool/tokenized-unstored-field "body" s))
           (recur doc (drop 50 body)
-		 (+ line-count (count lines))
-		 (count s))))
+                 (+ line-count (count lines))
+                 (count s))))
     (doto doc
       (.add (fieldpool/stored-field "lines" (str line-count)))
       (.add (fieldpool/stored-field "chars" (str char-count))))))
@@ -217,20 +217,20 @@ Also adds fields for the line and character count of the message."
       (try
        (when (zero? (mod cnt 1000))
          (.println System/err
-		   (format "\nmsgs/sec: %.2f"
-			   (float (/ cnt
-				     (inc (/ (- (System/currentTimeMillis)
-						starttime)
-					     1000)))))))
+                   (format "\nmsgs/sec: %.2f"
+                           (float (/ cnt
+                                     (inc (/ (- (System/currentTimeMillis)
+                                                starttime)
+                                             1000)))))))
        (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
                (index-message iw (parse-message (first messages) connection)))
        (recur connection (rest messages) iw [(inc (or cnt 0)) starttime])
        (catch Exception e
          (.println System/err (str "Agent got exception: " e))
-	 (.printStackTrace e))
+         (.printStackTrace e))
        (catch Error e
          (.println System/err (str "Agent got error: " e))
-	 (.printStackTrace e))))))
+         (.printStackTrace e))))))
 
 
 
@@ -369,16 +369,16 @@ matching documents."
 (defn -main [& args]
   (alter-var-root #'*config* (fn [_] (read (PushbackReader. (reader "config.clj")))))
   (let [{:keys [port indexfile]} *config*
-	connections (map (fn [b]
-			   (require (:backend b))
-			   (let [conn (@(ns-resolve (:backend b)
-						    'get-connection)
-				       b)]
-			     (swap! conn assoc :config b)
-			     conn))
-			 (:backends *config*))
-	searcher (agent nil)
-	indexer (agent nil)]
+        connections (map (fn [b]
+                           (require (:backend b))
+                           (let [conn (@(ns-resolve (:backend b)
+                                                    'get-connection)
+                                       b)]
+                             (swap! conn assoc :config b)
+                             conn))
+                         (:backends *config*))
+        searcher (agent nil)
+        indexer (agent nil)]
 
     (send-off searcher handle-searches indexfile (Integer. port))
     (send-off indexer start-indexing indexfile connections)
