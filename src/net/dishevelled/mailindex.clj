@@ -132,7 +132,7 @@ Also adds fields for the line and character count of the message."
     (fieldpool/reset)
 
     (let [source (-> @connection :config :name)]
-      (.add doc (fieldpool/stored-field "group" (-> msg :id :group)))
+      (.add doc (fieldpool/tokenized-field "group" (-> msg :id :group)))
       (.add doc (fieldpool/stored-field "num" (-> msg :id :num)))
       (.add doc (fieldpool/stored-field "source" source))
       (.add doc (fieldpool/stored-field "id"
