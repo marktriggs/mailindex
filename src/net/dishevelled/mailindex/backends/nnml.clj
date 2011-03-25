@@ -1,34 +1,25 @@
 (ns net.dishevelled.mailindex.backends.nnml
-  (:import (java.util Date))
-  (:use clojure.contrib.duck-streams))
+  (:import (java.util Date)
+           (java.io FileInputStream))
+  (:require clojure.set)
+  (:use clojure.java.io))
 
-
-
-(def *max-lines* 50000)
 
 (defn- mtime-to-days [mtime]
   (let [now (.getTime (Date.))]
     (int (/ (- now mtime) 1000 60 60 24))))
 
 
-(defn message-seq
-  "A full lazy file reader that won't return more than `*max-lines*'
-Fully lazy--doesn't even open the file until the first line is requred."
+(defn- message-bytes
+  "Return the bytes of a message."
   [msg]
-  (lazy-seq
-    (let [#^java.io.BufferedReader rdr (reader msg)
-	  step (fn step [#^java.io.BufferedReader rdr cnt]
-		 (let [line (.readLine rdr)
-		       cnt (int cnt)]
-		   (if (and (< cnt (int *max-lines*))
-			    line)
-		     (cons line (lazy-seq (step rdr (inc cnt))))
-		     (do (.close rdr)
-			 nil))))]
-      (step rdr 0))))
+  (let [out (byte-array (.length (file msg)))]
+    (with-open [fis (FileInputStream. msg)]
+      (.read fis out))
+    out))
 
 
-(defn filename-to-id
+(defn- filename-to-id
   "Parse a filesystem path into a group id (group + number)"
   [base filename]
   (let [[whole group num]
@@ -37,6 +28,11 @@ Fully lazy--doesn't even open the file until the first line is requred."
                  filename))]
     {:group group :num num}))
 
+
+
+;;;
+;;; Our public interface...
+;;;
 
 (defn get-deletions
   "Return the subset of `ids' that represent deleted messages."
@@ -55,19 +51,26 @@ Fully lazy--doesn't even open the file until the first line is requred."
         cmd (if index-mtime
               (concat cmd ["-mtime" (str "-" (inc (mtime-to-days index-mtime)))])
               cmd)
-        messages (filter #(re-find #"/[0-9]+$" %)
-                         (line-seq (reader (.. Runtime
-                                               getRuntime
-                                               (exec (into-array cmd))
-                                               getInputStream))))
-        new-messages (clojure.set/difference (set messages)
+        messages (set (filter #(re-find #"/[0-9]+$" %)
+                              (line-seq (reader (.. Runtime
+                                                    getRuntime
+                                                    (exec (into-array cmd))
+                                                    getInputStream)))))
+        new-messages (clojure.set/difference messages
                                              (:seen-messages @connection))]
+
+    ;; Add any newly-found messages to our list of seen messages.
+    ;; Turf out any seen messages that we didn't re-find to avoid
+    ;; unbounded growth.
     (swap! connection update-in
            [:seen-messages]
-           clojure.set/union new-messages)
+           (fn [seen-messages]
+             (set (remove (fn [msg] (not (messages msg)))
+                          (clojure.set/union seen-messages new-messages)))))
+
     (map (fn [msg]
            {:id (filename-to-id base msg)
-            :lines (message-seq msg)})
+            :content (message-bytes msg)})
          new-messages)))
 
 

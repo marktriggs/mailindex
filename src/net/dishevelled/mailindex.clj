@@ -13,17 +13,19 @@
            (org.apache.lucene.queryParser QueryParser$Operator
                                           MultiFieldQueryParser)
            (java.net ServerSocket InetAddress BindException)
-           (java.util Calendar Date SimpleTimeZone Vector)
+           (java.util Calendar Date SimpleTimeZone Vector Properties)
            (java.text SimpleDateFormat)
-           (java.io File PushbackReader))
+           (java.io File PushbackReader ByteArrayInputStream)
+
+           (javax.mail.internet MimeMessage)
+           (javax.mail Session Message$RecipientType))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
-  (:use clojure.contrib.duck-streams
-        clojure.contrib.str-utils
-        clojure.contrib.seq-utils
+  (:use clojure.java.io
+        clojure.string
+        clojure.contrib.seq
         clojure.contrib.def)
 
   (:gen-class))
-
 
 
 (def *date-output-format*
@@ -46,26 +48,40 @@
 (def *config* nil)
 
 
-(declare parse-date)
+(defn address-to-str [address]
+  (format "%s <%s>"
+          (or (.getPersonal address) "")
+          (.getAddress address)))
 
 
 (defvar *parse-rules*
   {
-   "date"    {:pattern "date: "    :boost 10
-              :preprocess #(when-let [date (parse-date %)]
-                             (DateTools/dateToString
-                              date
-                              DateTools$Resolution/DAY))}
+   "date"    {:value-fn (fn [msg]
+                          (DateTools/dateToString
+                           (or (.getSentDate msg)
+                               (.getReceivedDate msg))
+                           DateTools$Resolution/DAY))
+              :boost 10}
 
-   "subject" {:pattern "subject: " :boost 5}
-   "to"      {:pattern "to: "      :boost 2}
-   "from"    {:pattern "from: "    :boost 3}
-   "body"    {:pattern nil}
-   "msgid"   {:pattern "message-id: "}
+   "subject" {:value-fn (fn [msg] (.getSubject msg)) :boost 5}
+   "to"      {:value-fn
+              (fn [msg] (join
+                         " "
+                         (map address-to-str
+                              (.getRecipients msg Message$RecipientType/TO))))
+              :boost 2}
+   "from"    {:value-fn (fn [msg] (address-to-str (first (.getFrom msg))))
+              :boost 3}
+   "body"    {}
+   "msgid"   {:value-fn (fn [msg] (.getMessageID msg))}
    })
 
 
+
 ;;; Utility functions
+
+(defn error [fmt & args]
+  (.println System/err (apply format fmt args)))
 
 (defn get-field [#^Document doc field]
   "Return the first value for a given field from a Lucene document."
@@ -77,50 +93,82 @@
        (do ~@body)))
 
 
+(defn count-lines [s]
+  (reduce (fn [cnt ch]
+            (if (= ch \newline)
+              (inc cnt)
+              cnt))
+          0
+          s))
+
+
+
 ;;; Message parsing
 
-(defn parse-date
-  "Turn `datestring' into a Date object by any means necessary!"
-  [datestring]
-  (some (fn [#^SimpleDateFormat formatter]
-          (try
-           (.parse formatter datestring)
-           (catch Exception _)))
-        *date-formatters*))
+(declare parse-mime-part)
+
+(defn parse-mime-multipart [multipart]
+  (mapcat #(parse-mime-part (.getBodyPart multipart (int %)))
+          (range (.getCount multipart))))
+
+
+(defn strip-html [s]
+  (let [content (org.apache.tika.sax.WriteOutContentHandler. 1000000)]
+    (.parse (org.apache.tika.parser.html.HtmlParser.)
+            (java.io.ByteArrayInputStream. (.getBytes s))
+            content
+            (org.apache.tika.metadata.Metadata.)
+            (org.apache.tika.parser.ParseContext.))
+    (.toString content)))
+
+
+(defn parse-mime-part
+  "Recursively parses a MIME part converting it into a sequence of strings."
+  [part]
+  (try
+    (let [content (.getContent part)]
+      (condp re-find (.toLowerCase (.getContentType part))
+        #"^text/(plain|calendar)" [(if (string? content)
+                                     content
+                                     (slurp content))]
+        #"^text/(html|xml)" [(strip-html content)]
+        #"^message/rfc822" (parse-mime-part content)
+        #"^multipart/" (parse-mime-multipart (.getContent part))
+        []))
+    (catch java.io.UnsupportedEncodingException e
+      [])))
+
+
+
 
 
 (defn load-body
   "Load the contents of the `body` seq into a Lucene `doc'.
 Also adds fields for the line and character count of the message."
-  [#^Document doc body line-count char-count]
-  (if (seq body)
-    (let [lines (take 50 body)
-          s (str-join "\n" lines)]
-      (do (.add doc (fieldpool/tokenized-unstored-field "body" s))
-          (recur doc (drop 50 body)
-                 (+ line-count (count lines))
-                 (count s))))
+  [#^Document doc #^MimeMessage msg]
+
+  (let [parts (parse-mime-part msg)]
+    (doseq [part parts]
+      (when part
+        (.add doc (fieldpool/tokenized-unstored-field "body" part))))
+
     (doto doc
-      (.add (fieldpool/stored-field "lines" (str line-count)))
-      (.add (fieldpool/stored-field "chars" (str char-count))))))
+      (.add (fieldpool/stored-field "lines"
+                                    (str (reduce + (map count-lines parts)))))
+      (.add (fieldpool/stored-field "chars" (str (.getSize msg)))))))
 
 
 (defn load-headers
   "Add interesting mail headers to Lucene `doc'."
-  [#^Document doc lines]
-  (doseq [#^String line (take-while #(not= % "") lines)]
-    (when-let [[field value]
-               (some (fn [[field opts]]
-                       (when (and (:pattern opts)
-                                  (.startsWith (.toLowerCase line)
-                                               (:pattern opts)))
-                         [field ((get opts :preprocess identity)
-                                 (.substring line
-                                             (inc (. line (indexOf " ")))))]))
-                     *parse-rules*)]
-      (when value
-        (.add doc (fieldpool/tokenized-field field value)))))
-  lines)
+  [#^Document doc #^MimeMessage msg]
+  (doseq [[field rule] *parse-rules*]
+    (when (:value-fn rule)
+      (when-let [value (try ((:value-fn rule) msg)
+                            (catch Exception _
+                              (error "Warning: missing value for field '%s'"
+                                     field)
+                              nil))]
+        (.add doc (fieldpool/tokenized-field field value))))))
 
 
 (defn parse-message
@@ -140,11 +188,11 @@ Also adds fields for the line and character count of the message."
                                                 (-> msg :id :num)
                                                 source))))
 
-    (load-body doc
-               (load-headers doc (:lines msg))
-               0 0)
+    (let [parsed-msg (MimeMessage. (Session/getDefaultInstance (Properties.))
+                                   (ByteArrayInputStream. (:content msg)))]
+      (load-headers doc parsed-msg)
+      (load-body doc parsed-msg))
     doc))
-
 
 
 ;;; Lucene indexing
@@ -196,7 +244,7 @@ Also adds fields for the line and character count of the message."
               deletes ((:deleted-messages-fn @connection)
                        connection (keys doclist))]
           (doseq [d deletes]
-            (.println System/err (str "Deleting from index: " (doclist d)))
+            (error "Deleting from index: %s" (doclist d))
             (.deleteDocuments writer (Term. "id" (doclist d)))))))))
 
 
@@ -214,22 +262,22 @@ Also adds fields for the line and character count of the message."
         starttime (or starttime (System/currentTimeMillis))]
     (when (seq messages)
       (try
-       (when (zero? (mod cnt 1000))
-         (.println System/err
-                   (format "\nmsgs/sec: %.2f"
-                           (float (/ cnt
-                                     (inc (/ (- (System/currentTimeMillis)
-                                                starttime)
-                                             1000)))))))
-       (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
-               (index-message iw (parse-message (first messages) connection)))
-       (recur connection (rest messages) iw [(inc (or cnt 0)) starttime])
-       (catch Exception e
-         (.println System/err (str "Agent got exception: " e))
-         (.printStackTrace e))
-       (catch Error e
-         (.println System/err (str "Agent got error: " e))
-         (.printStackTrace e))))))
+        (when (zero? (mod cnt 1000))
+          (error "\nmsgs/sec: %.2f"
+                 (float (/ cnt
+                            (inc (/ (- (System/currentTimeMillis)
+                                       starttime)
+                                    1000))))))
+        (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
+                (index-message iw (try (parse-message (first messages) connection)
+                                       (catch Exception e
+                                         (error "\nMessage failed to index: %s"
+                                                (first messages))
+                                         (throw e)))))
+        (catch Throwable e
+          (error "Agent got throwable: %s" e)
+          (.printStackTrace e)))
+      (recur connection (rest messages) iw [(inc (or cnt 0)) starttime]))))
 
 
 
@@ -244,20 +292,20 @@ Also adds fields for the line and character count of the message."
   "Kick off the indexer."
   [state indexfile connections]
   (try
-   (let [last-update (index-age indexfile)]
-     (doseq [connection connections]
-       (with-writer indexfile iw
-         (index connection
-                ((:new-messages-fn @connection) connection last-update)
-                iw)))
-     (when (time-to-optimise?)
-       (doseq [connection connections]
-         (do-deletes connection indexfile))
-       (do-optimize indexfile)))
-   (Thread/sleep (:reindex-frequency *config*))
-   (catch Exception e
-     (.println System/err e)
-     (.printStackTrace e)))
+    (let [last-update (index-age indexfile)]
+      (doseq [connection connections]
+        (with-writer indexfile iw
+          (index connection
+                 ((:new-messages-fn @connection) connection last-update)
+                 iw)))
+      (when (time-to-optimise?)
+        (doseq [connection connections]
+          (do-deletes connection indexfile))
+        (do-optimize indexfile)))
+    (Thread/sleep (:reindex-frequency *config*))
+    (catch Throwable e
+      (error "%s" e)
+      (.printStackTrace e)))
   (send-off *agent* start-indexing indexfile connections))
 
 
@@ -346,18 +394,19 @@ matching documents."
   "Kick off the search handler."
   [state indexfile port]
   (try
-   (.println System/err (format "Listening for searches on port %d" port))
+   (error "Listening for searches on port %d" port)
    (with-open [server (ServerSocket. port 50 (InetAddress/getByName "127.0.0.1"))
                client (.accept server)
                in (reader (.getInputStream client))
                out (writer (.getOutputStream client))]
-     (.println out (prn-str (search indexfile (.readLine in))))
+     (.write out (prn-str (search indexfile (.readLine in))))
+     (.write out "\n")
      (.flush out))
 
    (catch BindException e
      (throw (RuntimeException. e)))
-   (catch Exception e
-     (.println System/err e)
+   (catch Throwable e
+     (error "%s" e)
      (.printStackTrace e)))
   (send-off *agent* handle-searches indexfile port))
 

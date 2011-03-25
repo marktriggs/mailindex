@@ -2,11 +2,10 @@
   "IMAP mailindex backend"
   (:import (javax.mail Folder UIDFolder Part Message Session Store)
            (javax.mail.internet MimeMultipart)
+           (java.io ByteArrayOutputStream)
            (com.sun.mail.imap IMAPMessage IMAPFolder))
-  (:use [clojure.contrib.duck-streams :only [reader spit read-lines]]
-        [clojure.contrib.java-utils :only [file get-system-property]]
-        [clojure.contrib.seq-utils :only [flatten find-first]]
-        [clojure.contrib.str-utils2 :only [split] :as str]))
+  (:use [clojure.java.io :only [reader file]]
+        [clojure.contrib.seq :only [find-first]]))
 
 ;;;; Example config.clj
 
@@ -25,21 +24,25 @@
 
 ;;;; Connecting
 
+
 (defn parse-authinfo-line
   "Parses an authinfo line, returns [machine login password]."
   [line]
   (if-let [m (re-matches #"machine (\S+) login (\S+) password (\S+)" line)]
     (rest m)))
 
+
 (defn read-authinfo
   "Read a password from an authinfo file."
   [f host username]
-  (->> (map parse-authinfo-line (read-lines f))
+  (->> (map parse-authinfo-line (line-seq (reader f)))
        (find-first (fn [[h u p]] (and (= h host) (= u username))))
        (last)))
 
+
 (defn #^Session new-mail-session []
   (Session/getDefaultInstance (java.util.Properties.)))
+
 
 (defn imap-connect [config]
   (let [{:keys [host username password authfile]} config
@@ -49,6 +52,7 @@
     (.connect store host username password)
     store))
 
+
 (defn check-connection!
   "Checks whether our imap connection is open and if not opens it."
   [conn]
@@ -56,6 +60,7 @@
     (if (and store (.isConnected store))
       conn
       (swap! conn assoc :store (imap-connect (:config @conn))))))
+
 
 ;;;; Folder walking
 
@@ -79,49 +84,21 @@
   [store]
   (filter holds-messages? (folder-tree store)))
 
+
 ;;;; Message parsing
-
-(defn strip-tags [#^String html]
-  (str/replace html #"<[^>]*>|&nbsp;|&#\d+;" ""))
-
-(declare parse-mime-part)
-
-(defn parse-mime-multipart [#^MimeMultipart multipart]
-  (map #(parse-mime-part (.getBodyPart multipart (int %)))
-       (range (.getCount multipart))))
-
-(defn parse-mime-part
-  "Recursively parses a MIME part converting it into a sequence of strings."
-  [#^Part part]
-  (try
-   (let [content (.getContent part)]
-     (condp re-find (.toLowerCase (.getContentType part))
-       #"^text/(plain|calendar)" [content]
-       #"^text/(html|xml)" [(strip-tags content)]
-       #"^message/rfc822" (parse-mime-part content)
-       #"^multipart/" (parse-mime-multipart (.getContent part))
-       []))
-   (catch java.io.UnsupportedEncodingException e
-     [])))
-
-(defn parse-body
-  "Converts a message body into a line seq (stripping tags, dealing with MIME
-  parts etc)."
-  [#^IMAPMessage message]
-  (take 2000
-        (mapcat #(split (str %) #"\r?\n") (flatten (parse-mime-part message)))))
 
 (defn message-id [#^IMAPMessage message]
   (let [#^IMAPFolder folder (.getFolder message)]
     {:group (.getFullName folder)
      :num (str (.getUID folder message))}))
 
-(defn parse-message [#^IMAPMessage message]
-  {:id (message-id message)
-   :lines (concat (enumeration-seq (.getAllHeaderLines message)) [""]
-                  (parse-body message))})
 
-;;;; Backend implementation
+(defn parse-message [#^IMAPMessage message]
+  (let [message-bytes (ByteArrayOutputStream.)]
+    (.writeTo message message-bytes)
+    {:id (message-id message)
+     :content (.toByteArray message-bytes)}))
+
 
 (defmacro when-consumed
   "Modifies a lazy seq so that when it has been fully consumed, body is executed
@@ -131,12 +108,14 @@
     ~s
     (lazy-seq ~@body nil)))
 
+
 (defn read-state [conn]
   (try
    (with-open [r (reader (-> @conn :config :statefile))]
      (read (java.io.PushbackReader. r)))
    (catch java.io.FileNotFoundException e
      {})))
+
 
 (defn update-folder
   "Returns a lazy-seq of messages in this folder."
@@ -154,10 +133,12 @@
                      (spit (-> @conn :config :statefile)
                            (prn-str (:last-uids @conn)))))))
 
+
 (defn updated-messages [conn & [index-mtime]]
   (check-connection! conn)
   (swap! conn assoc :last-uids (read-state conn))
   (mapcat #(update-folder % conn) (message-folders (:store @conn))))
+
 
 (defn get-deletions [conn ids]
   (check-connection! conn)
@@ -166,6 +147,7 @@
           :let [#^IMAPFolder folder (.getFolder store (:group id))]
           :when (.getMessageByUID folder (Long/parseLong #^String (:num id)))]
       id)))
+
 
 (defn get-connection [config]
   (atom {:new-messages-fn updated-messages

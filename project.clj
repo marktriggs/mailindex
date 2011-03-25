@@ -1,8 +1,28 @@
 (defproject mailindex "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.2.0-master-SNAPSHOT"]
-                 [org.clojure/clojure-contrib "1.2.0-master-SNAPSHOT"]
+  :dependencies [[org.clojure/clojure "1.3.0-alpha4"]
+                 [org.clojure.contrib/java-utils "1.3.0-alpha4"]
+                 [org.clojure.contrib/seq "1.3.0-alpha4"]
+                 [org.clojure.contrib/def "1.3.0-alpha4"]
                  [org.apache.lucene/lucene-core "2.9.2"]
                  [org.apache.lucene/lucene-highlighter "2.9.2"]
-                 [javax.mail/mail "1.4.1"]]
-  :dev-dependencies [[leiningen/lein-swank "1.1.0"]]
+                 [javax.mail/mail "1.4.1"]
+                 [org.apache.tika/tika-core "0.9"]
+                 [org.apache.tika/tika-parsers "0.9"
+                  :exclusions [edu.ucar/netcdf
+                               commons-httpclient/commons-httpclient
+                               org.apache.james/apache-mime4j
+                               org.apache.commons/commons-compress
+                               org.apache.pdfbox/pdfbox
+                               org.bouncycastle/bcmail-jdk15
+                               org.bouncycastle/bcprov-jdk15
+                               org.apache.poi/poi
+                               org.apache.poi/poi-scratchpad
+                               org.apache.poi/poi-ooxml
+                               org.apache.geronimo.specs/geronimo-stax-api_1.0_spec
+                               asm/asm
+                               com.drewnoakes/metadata-extractor
+                               de.l3s.boilerpipe/boilerpipe]]]
+  :dev-dependencies [[leiningen/lein-swank "1.2.0-SNAPSHOT"]
+                     [swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
+  :jar-exclusions [#"BCKEY.SF"]
   :main net.dishevelled.mailindex)
