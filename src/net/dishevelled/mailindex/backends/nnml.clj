@@ -4,7 +4,7 @@
 
 
 
-(def *max-lines* 2000)
+(def *max-lines* 50000)
 
 (defn- mtime-to-days [mtime]
   (let [now (.getTime (Date.))]
