@@ -21,9 +21,8 @@
         clojure.contrib.str-utils
         clojure.contrib.seq-utils
         clojure.contrib.def)
-  (:gen-class
-   :name MailIndex
-   :main true))
+
+  (:gen-class))
 
 
 

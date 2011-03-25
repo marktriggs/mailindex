@@ -5,5 +5,4 @@
                  [org.apache.lucene/lucene-highlighter "2.9.2"]
                  [javax.mail/mail "1.4.1"]]
   :dev-dependencies [[leiningen/lein-swank "1.1.0"]]
-  :namespaces :all
-  :main MailIndex)
+  :main net.dishevelled.mailindex)
