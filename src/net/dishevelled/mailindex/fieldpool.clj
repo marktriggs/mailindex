@@ -37,25 +37,25 @@
 
 (defn tokenized-field [name val]
   "Create a tokenized, stored field."
-  (doto (make-field name Field$Store/YES Field$Index/TOKENIZED)
+  (doto (make-field name Field$Store/YES Field$Index/ANALYZED)
     (.setValue val)))
 
 
 (defn tokenized-unstored-field [name val]
   "Create a tokenized, stored field."
-  (doto (make-field name Field$Store/NO Field$Index/TOKENIZED)
+  (doto (make-field name Field$Store/NO Field$Index/ANALYZED)
     (.setValue val)))
 
 
 (defn untokenized-field [name val]
   "Create an untokenized, unstored field."
-  (doto (make-field name Field$Store/NO Field$Index/UN_TOKENIZED)
+  (doto (make-field name Field$Store/NO Field$Index/NOT_ANALYZED)
     (.setValue val)))
 
 
 (defn stored-field [#^String name #^String val]
   "Create a stored, untokenized field."
-  (doto (make-field name Field$Store/YES Field$Index/UN_TOKENIZED)
+  (doto (make-field name Field$Store/YES Field$Index/NOT_ANALYZED)
     (.setOmitNorms true)
     (.setValue val)))
 

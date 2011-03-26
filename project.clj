@@ -3,8 +3,8 @@
                  [org.clojure.contrib/java-utils "1.3.0-alpha4"]
                  [org.clojure.contrib/seq "1.3.0-alpha4"]
                  [org.clojure.contrib/def "1.3.0-alpha4"]
-                 [org.apache.lucene/lucene-core "2.9.2"]
-                 [org.apache.lucene/lucene-highlighter "2.9.2"]
+                 [org.apache.lucene/lucene-core "3.0.3"]
+                 [org.apache.lucene/lucene-highlighter "3.0.3"]
                  [javax.mail/mail "1.4.1"]
                  [org.apache.tika/tika-core "0.9"]
                  [org.apache.tika/tika-parsers "0.9"

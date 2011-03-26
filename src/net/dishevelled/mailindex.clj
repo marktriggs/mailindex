@@ -10,6 +10,7 @@
            (org.apache.lucene.analysis.standard StandardAnalyzer)
            (org.apache.lucene.search.highlight QueryTermExtractor)
            (org.apache.lucene.store FSDirectory)
+           (org.apache.lucene.util Version)
            (org.apache.lucene.queryParser QueryParser$Operator
                                           MultiFieldQueryParser)
            (java.net ServerSocket InetAddress BindException)
@@ -217,15 +218,16 @@ Also adds fields for the line and character count of the message."
   "Open a Lucene IndexWriter on `index' bound to `var' and evaluate `body'"
   [index var & body]
   `(do
-     (IndexWriter/unlock (FSDirectory/getDirectory ~index))
-     (with-open [#^IndexWriter ~var
-                 (doto (IndexWriter.
-                        ~index
-                        (StandardAnalyzer.)
-                        IndexWriter$MaxFieldLength/UNLIMITED)
-                   (.setRAMBufferSizeMB 20)
-                   (.setUseCompoundFile false))]
-       ~@body)))
+     (let [dir# (FSDirectory/open (file ~index))]
+       (IndexWriter/unlock dir#)
+       (with-open [#^IndexWriter ~var
+                   (doto (IndexWriter.
+                          dir#
+                          (StandardAnalyzer. Version/LUCENE_30)
+                          IndexWriter$MaxFieldLength/UNLIMITED)
+                     (.setRAMBufferSizeMB 20)
+                     (.setUseCompoundFile false))]
+         ~@body))))
 
 
 (defn do-deletes
@@ -313,21 +315,21 @@ Also adds fields for the line and character count of the message."
 ;;; Query handling
 
 (defn result-seq
-  "Returns a lazy seq of a Lucene Hits object."
-  [hits]
-  (map #(let [doc (.doc hits %)]
-          [(get-field doc "group")
-           (get-field doc "num")
-           (int (* (.score hits %) 100000))
-           (concat
-            [:date
-             (when (get-field doc "date")
-               (.format *date-output-format*
-                        (DateTools/stringToDate (get-field doc "date"))))]
-            (mapcat (fn [f] [(keyword f)
-                             (get-field doc f)])
-                    ["subject" "to" "from" "msgid" "lines" "chars"]))])
-       (range (.length hits))))
+  "Returns a lazy seq of results from a TopDocs object."
+  [ir topdocs]
+  (for [scoredoc (.scoreDocs topdocs)
+        :let [doc (.document ir (.doc scoredoc))]]
+    [(get-field doc "group")
+     (get-field doc "num")
+     (int (* (.score scoredoc) 100000))
+     (concat
+      [:date
+       (when (get-field doc "date")
+         (.format *date-output-format*
+                  (DateTools/stringToDate (get-field doc "date"))))]
+      (mapcat (fn [f] [(keyword f)
+                       (get-field doc f)])
+              ["subject" "to" "from" "msgid" "lines" "chars"]))]))
 
 
 (defn normalcase
@@ -346,8 +348,9 @@ Also adds fields for the line and character count of the message."
   [querystr reader]
   (let [query (BooleanQuery.)
         all-fields (.parse (doto (MultiFieldQueryParser.
-                                      (into-array (keys *parse-rules*))
-                                      (StandardAnalyzer.))
+                                  Version/LUCENE_30
+                                  (into-array (keys *parse-rules*))
+                                  (StandardAnalyzer. Version/LUCENE_30))
                              (.setDefaultOperator QueryParser$Operator/AND))
                            (normalcase querystr))]
     (.setBoost all-fields 20)
@@ -383,11 +386,13 @@ Also adds fields for the line and character count of the message."
   "Perform a search against `index' using `querystr'.  Returns the top
 matching documents."
   [index querystr]
-  (with-open [reader (IndexReader/open index)
+  (with-open [reader (IndexReader/open (FSDirectory/open (file index)))
               searcher (IndexSearcher. reader)]
-    (doall (take (:max-results *config*)
-                 (result-seq (.search searcher
-                                      (build-query querystr reader)))))))
+    (doall (result-seq reader
+                       (.search searcher
+                                (build-query querystr reader)
+                                nil
+                                (:max-results *config*))))))
 
 
 (defn handle-searches
