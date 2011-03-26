@@ -40,7 +40,7 @@
        (last)))
 
 
-(defn #^Session new-mail-session []
+(defn ^Session new-mail-session []
   (Session/getDefaultInstance (java.util.Properties.)))
 
 
@@ -56,7 +56,7 @@
 (defn check-connection!
   "Checks whether our imap connection is open and if not opens it."
   [conn]
-  (let [#^Store store (:store @conn)]
+  (let [^Store store (:store @conn)]
     (if (and store (.isConnected store))
       conn
       (swap! conn assoc :store (imap-connect (:config @conn))))))
@@ -66,17 +66,17 @@
 
 (defn list-folder
   "A seq of the subfolders of a folder."
-  [#^Folder folder]
+  [^Folder folder]
   (seq (.list folder)))
 
 (defn folder-tree
   "A seq of the entire folder tree in a mail store."
-  [#^Store store]
+  [^Store store]
   (tree-seq list-folder list-folder (.getDefaultFolder store)))
 
 (defn holds-messages?
   "Returns true when a folder can hold messages."
-  [#^Folder folder]
+  [^Folder folder]
   (pos? (bit-and (.getType folder) Folder/HOLDS_MESSAGES)))
 
 (defn message-folders
@@ -87,13 +87,13 @@
 
 ;;;; Message parsing
 
-(defn message-id [#^IMAPMessage message]
-  (let [#^IMAPFolder folder (.getFolder message)]
+(defn message-id [^IMAPMessage message]
+  (let [^IMAPFolder folder (.getFolder message)]
     {:group (.getFullName folder)
      :num (str (.getUID folder message))}))
 
 
-(defn parse-message [#^IMAPMessage message]
+(defn parse-message [^IMAPMessage message]
   (let [message-bytes (ByteArrayOutputStream.)]
     (.writeTo message message-bytes)
     {:id (message-id message)
@@ -119,7 +119,7 @@
 
 (defn update-folder
   "Returns a lazy-seq of messages in this folder."
-  [#^Folder folder conn]
+  [^Folder folder conn]
   (let [name (.getFullName folder)
         start-uid (get (:last-uids @conn) name 1)
         end-uid (.getUIDNext folder)]
@@ -142,10 +142,10 @@
 
 (defn get-deletions [conn ids]
   (check-connection! conn)
-  (let [#^Store store (:store @conn)]
+  (let [^Store store (:store @conn)]
     (for [id ids
-          :let [#^IMAPFolder folder (.getFolder store (:group id))]
-          :when (.getMessageByUID folder (Long/parseLong #^String (:num id)))]
+          :let [^IMAPFolder folder (.getFolder store (:group id))]
+          :when (.getMessageByUID folder (Long/parseLong ^String (:num id)))]
       id)))
 
 

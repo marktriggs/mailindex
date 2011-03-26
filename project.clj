@@ -25,4 +25,5 @@
   :dev-dependencies [[leiningen/lein-swank "1.2.0-SNAPSHOT"]
                      [swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
   :jar-exclusions [#"BCKEY.SF"]
+  :warn-on-reflection true
   :main net.dishevelled.mailindex)

@@ -12,7 +12,7 @@
 
 (defn- message-bytes
   "Return the bytes of a message."
-  [msg]
+  [^String msg]
   (let [out (byte-array (.length (file msg)))]
     (with-open [fis (FileInputStream. msg)]
       (.read fis out))

@@ -1,7 +1,7 @@
 (ns net.dishevelled.mailindex
   (:import (org.apache.lucene.index IndexReader IndexWriter
                                     IndexWriter$MaxFieldLength Term)
-           (org.apache.lucene.search IndexSearcher BooleanQuery
+           (org.apache.lucene.search IndexSearcher BooleanQuery TopDocs
                                      PhraseQuery BooleanClause$Occur TermQuery)
            (org.apache.lucene.document Document Field Field$Store
                                        Field$Index DateTools
@@ -18,8 +18,8 @@
            (java.text SimpleDateFormat)
            (java.io File PushbackReader ByteArrayInputStream)
 
-           (javax.mail.internet MimeMessage)
-           (javax.mail Session Message$RecipientType))
+           (javax.mail.internet MimeMessage InternetAddress MimeMultipart)
+           (javax.mail Session Part Message$RecipientType))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
   (:use clojure.java.io
         [clojure.string :only [join]]
@@ -49,7 +49,7 @@
 (def config (atom nil))
 
 
-(defn address-to-str [address]
+(defn address-to-str [^InternetAddress address]
   (format "%s <%s>"
           (or (.getPersonal address) "")
           (.getAddress address)))
@@ -57,24 +57,24 @@
 
 (defvar parse-rules
   {
-   "date"    {:value-fn (fn [msg]
+   "date"    {:value-fn (fn [^MimeMessage msg]
                           (DateTools/dateToString
                            (or (.getSentDate msg)
                                (.getReceivedDate msg))
                            DateTools$Resolution/DAY))
               :boost 10}
 
-   "subject" {:value-fn (fn [msg] (.getSubject msg)) :boost 5}
+   "subject" {:value-fn (fn [^MimeMessage msg] (.getSubject msg)) :boost 5}
    "to"      {:value-fn
-              (fn [msg] (join
+              (fn [^MimeMessage msg] (join
                          " "
                          (map address-to-str
                               (.getRecipients msg Message$RecipientType/TO))))
               :boost 2}
-   "from"    {:value-fn (fn [msg] (address-to-str (first (.getFrom msg))))
+   "from"    {:value-fn (fn [^MimeMessage msg] (address-to-str (first (.getFrom msg))))
               :boost 3}
    "body"    {}
-   "msgid"   {:value-fn (fn [msg] (.getMessageID msg))}
+   "msgid"   {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))}
    })
 
 
@@ -84,7 +84,7 @@
 (defn error [fmt & args]
   (.println System/err (apply format fmt args)))
 
-(defn get-field [#^Document doc field]
+(defn get-field [^Document doc field]
   "Return the first value for a given field from a Lucene document."
   (first (.getValues doc field)))
 
@@ -108,12 +108,12 @@
 
 (declare parse-mime-part)
 
-(defn parse-mime-multipart [multipart]
+(defn parse-mime-multipart [^MimeMultipart multipart]
   (mapcat #(parse-mime-part (.getBodyPart multipart (int %)))
           (range (.getCount multipart))))
 
 
-(defn strip-html [s]
+(defn strip-html [^String s]
   (let [content (org.apache.tika.sax.WriteOutContentHandler. 1000000)]
     (.parse (org.apache.tika.parser.html.HtmlParser.)
             (java.io.ByteArrayInputStream. (.getBytes s))
@@ -125,7 +125,7 @@
 
 (defn parse-mime-part
   "Recursively parses a MIME part converting it into a sequence of strings."
-  [part]
+  [^Part part]
   (try
     (let [content (.getContent part)]
       (condp re-find (.toLowerCase (.getContentType part))
@@ -146,7 +146,7 @@
 (defn load-body
   "Load the contents of the `body` seq into a Lucene `doc'.
 Also adds fields for the line and character count of the message."
-  [#^Document doc #^MimeMessage msg]
+  [^Document doc ^MimeMessage msg]
 
   (let [parts (parse-mime-part msg)]
     (doseq [part parts]
@@ -161,7 +161,7 @@ Also adds fields for the line and character count of the message."
 
 (defn load-headers
   "Add interesting mail headers to Lucene `doc'."
-  [#^Document doc #^MimeMessage msg]
+  [^Document doc ^MimeMessage msg]
   (doseq [[field rule] parse-rules]
     (when (:value-fn rule)
       (when-let [value (try ((:value-fn rule) msg)
@@ -175,7 +175,7 @@ Also adds fields for the line and character count of the message."
 (defn parse-message
   "Produce a Lucene document from an email message."
   [msg connection]
-  (let [#^Document doc (Document.)]
+  (let [^Document doc (Document.)]
 
     (fieldpool/reset)
 
@@ -200,7 +200,7 @@ Also adds fields for the line and character count of the message."
 
 (defn index-message
   "Index a message and add it to an IndexWriter."
-  [#^IndexWriter writer msg]
+  [^IndexWriter writer msg]
   (.updateDocument writer (Term. "id" (get-field msg "id")) msg))
 
 
@@ -220,7 +220,7 @@ Also adds fields for the line and character count of the message."
   `(do
      (let [dir# (FSDirectory/open (file ~index))]
        (IndexWriter/unlock dir#)
-       (with-open [#^IndexWriter ~var
+       (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
                           (StandardAnalyzer. Version/LUCENE_30)
@@ -233,7 +233,7 @@ Also adds fields for the line and character count of the message."
 (defn do-deletes
   "Remove any deletes messages from `index'"
   [connection index]
-  (with-open [reader #^IndexReader (IndexReader/open index)]
+  (with-open [reader ^IndexReader (IndexReader/open index)]
     (with-writer index writer
       (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
         (let [doclist (into {}
@@ -316,7 +316,7 @@ Also adds fields for the line and character count of the message."
 
 (defn result-seq
   "Returns a lazy seq of results from a TopDocs object."
-  [ir topdocs]
+  [^IndexReader ir ^TopDocs topdocs]
   (for [scoredoc (.scoreDocs topdocs)
         :let [doc (.document ir (.doc scoredoc))]]
     [(get-field doc "group")
@@ -329,13 +329,13 @@ Also adds fields for the line and character count of the message."
                   (DateTools/stringToDate (get-field doc "date"))))]
       (mapcat (fn [f] [(keyword f)
                        (get-field doc f)])
-              ["subject" "to" "from" "msgid" "lines" "chars"]))]))
+              (conj (keys parse-rules) "lines" "chars")))]))
 
 
 (defn normalcase
   "Normalise the case of a query string."
   [s]
-  (reduce (fn [#^String s #^String op]
+  (reduce (fn [^String s ^String op]
             (.replaceAll s (str " " op " ") (str " " (. op toUpperCase) " ")))
           (.replaceAll (.toLowerCase s)
                        "\\[([0-9*]+) to ([0-9*]+)\\]"
