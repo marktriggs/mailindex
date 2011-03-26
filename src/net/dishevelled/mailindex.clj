@@ -22,19 +22,19 @@
            (javax.mail Session Message$RecipientType))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
   (:use clojure.java.io
-        clojure.string
+        [clojure.string :only [join]]
         clojure.contrib.seq
         clojure.contrib.def)
 
   (:gen-class))
 
 
-(def *date-output-format*
+(def date-output-format
      (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
        (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
 
 
-(def *date-formatters*
+(def date-formatters
      (map #(doto (SimpleDateFormat. %)
              (.setTimeZone (SimpleTimeZone. 0 "UTF")))
           ["EEE, dd MMM yyyy"
@@ -45,8 +45,8 @@
            "E, M d yyyy"]))
 
 
-;;; Bound in (main)
-(def *config* nil)
+;;; Set in (main)
+(def config (atom nil))
 
 
 (defn address-to-str [address]
@@ -55,7 +55,7 @@
           (.getAddress address)))
 
 
-(defvar *parse-rules*
+(defvar parse-rules
   {
    "date"    {:value-fn (fn [msg]
                           (DateTools/dateToString
@@ -162,7 +162,7 @@ Also adds fields for the line and character count of the message."
 (defn load-headers
   "Add interesting mail headers to Lucene `doc'."
   [#^Document doc #^MimeMessage msg]
-  (doseq [[field rule] *parse-rules*]
+  (doseq [[field rule] parse-rules]
     (when (:value-fn rule)
       (when-let [value (try ((:value-fn rule) msg)
                             (catch Exception _
@@ -287,7 +287,7 @@ Also adds fields for the line and character count of the message."
   "True if the current time of day is a good time to optimise."
   []
   (let [hour (.. Calendar getInstance (get Calendar/HOUR_OF_DAY))]
-    (= hour (:optimize-hour *config*))))
+    (= hour (:optimize-hour @config))))
 
 
 (defn start-indexing
@@ -304,11 +304,11 @@ Also adds fields for the line and character count of the message."
         (doseq [connection connections]
           (do-deletes connection indexfile))
         (do-optimize indexfile)))
-    (Thread/sleep (:reindex-frequency *config*))
+    (Thread/sleep (:reindex-frequency @config))
     (catch Throwable e
       (error "%s" e)
       (.printStackTrace e)))
-  (send-off *agent* start-indexing indexfile connections))
+  (send-off agent start-indexing indexfile connections))
 
 
 
@@ -325,7 +325,7 @@ Also adds fields for the line and character count of the message."
      (concat
       [:date
        (when (get-field doc "date")
-         (.format *date-output-format*
+         (.format date-output-format
                   (DateTools/stringToDate (get-field doc "date"))))]
       (mapcat (fn [f] [(keyword f)
                        (get-field doc f)])
@@ -349,7 +349,7 @@ Also adds fields for the line and character count of the message."
   (let [query (BooleanQuery.)
         all-fields (.parse (doto (MultiFieldQueryParser.
                                   Version/LUCENE_30
-                                  (into-array (keys *parse-rules*))
+                                  (into-array (keys parse-rules))
                                   (StandardAnalyzer. Version/LUCENE_30))
                              (.setDefaultOperator QueryParser$Operator/AND))
                            (normalcase querystr))]
@@ -359,7 +359,7 @@ Also adds fields for the line and character count of the message."
     (when-let [terms (seq (set (map #(.getTerm %)
                                     (QueryTermExtractor/getTerms
                                      (.rewrite query reader)))))]
-      (doseq [field (keys *parse-rules*)]
+      (doseq [field (keys parse-rules)]
         (let [boolean-or (BooleanQuery.)
               boolean-and (BooleanQuery.)]
 
@@ -371,7 +371,7 @@ Also adds fields for the line and character count of the message."
                   (TermQuery. (Term. field term))
                   BooleanClause$Occur/MUST))
 
-          (let [boost (or (:boost (get *parse-rules* field))
+          (let [boost (or (:boost (get parse-rules field))
                           1)]
             (.setBoost boolean-or boost)
             (.setBoost boolean-and (* boost 10)))
@@ -392,7 +392,7 @@ matching documents."
                        (.search searcher
                                 (build-query querystr reader)
                                 nil
-                                (:max-results *config*))))))
+                                (:max-results @config))))))
 
 
 (defn handle-searches
@@ -420,8 +420,8 @@ matching documents."
 ;;; The main bit...
 
 (defn -main [& args]
-  (alter-var-root #'*config* (fn [_] (read (PushbackReader. (reader "config.clj")))))
-  (let [{:keys [port indexfile]} *config*
+  (reset! config (read (PushbackReader. (reader "config.clj"))))
+  (let [{:keys [port indexfile]} @config
         connections (map (fn [b]
                            (require (:backend b))
                            (let [conn (@(ns-resolve (:backend b)
@@ -429,7 +429,7 @@ matching documents."
                                        b)]
                              (swap! conn assoc :config b)
                              conn))
-                         (:backends *config*))
+                         (:backends @config))
         searcher (agent nil)
         indexer (agent nil)]
 
