@@ -439,8 +439,6 @@ matching documents."
         searcher (agent nil)
         indexer (agent nil)]
 
-    (searcher-manager/open indexfile)
-
     (send-off searcher handle-searches indexfile (Integer. port))
     (send-off indexer start-indexing indexfile connections)
     (await indexer searcher)))

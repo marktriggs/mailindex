@@ -66,24 +66,27 @@
 (def on-deck-searchers (atom {}))
 (def lock (Object.))
 
-(defn open [path]
-  (locking lock
-    (swap! on-deck-searchers
-           assoc path (IndexSearcher.
-                       (IndexReader/open
-                        (FSDirectory/open (file path)))))))
+(defn- do-open [path]
+  (swap! on-deck-searchers
+         assoc path (IndexSearcher.
+                     (IndexReader/open
+                      (FSDirectory/open (file path))))))
+
 
 (defn reopen [path]
   (locking lock
-    (let [ir (.getIndexReader (@on-deck-searchers path))
-          new-ir (.reopen ir)]
-      (when-not (identical? ir new-ir)
-        (swap! on-deck-searchers assoc path (IndexSearcher. new-ir))
-        (.decRef ir)))))
+    (when (@on-deck-searchers path)
+      (let [ir (.getIndexReader (@on-deck-searchers path))
+            new-ir (.reopen ir)]
+        (when-not (identical? ir new-ir)
+          (swap! on-deck-searchers assoc path (IndexSearcher. new-ir))
+          (.decRef ir))))))
 
 
 (defn take [path]
   (locking lock
+    (when (not (@on-deck-searchers path))
+      (do-open path))
     (let [searcher (@on-deck-searchers path)
           ir (.getIndexReader searcher)]
       (.incRef ir)
