@@ -1,8 +1,7 @@
 (ns net.dishevelled.mailindex
   (:import (org.apache.lucene.index IndexReader IndexWriter
                                     IndexWriter$MaxFieldLength Term)
-           (org.apache.lucene.search IndexSearcher BooleanQuery TopDocs
-                                     PhraseQuery BooleanClause$Occur TermQuery)
+           (org.apache.lucene.search BooleanQuery TopDocs PhraseQuery BooleanClause$Occur TermQuery)
            (org.apache.lucene.document Document Field Field$Store
                                        Field$Index DateTools
                                        DateTools$Resolution)
@@ -20,7 +19,8 @@
 
            (javax.mail.internet MimeMessage InternetAddress MimeMultipart)
            (javax.mail Session Part Message$RecipientType))
-  (:require [net.dishevelled.mailindex.fieldpool :as fieldpool])
+  (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
+            [net.dishevelled.mailindex.searcher-manager :as searcher-manager])
   (:use clojure.java.io
         [clojure.string :only [join]]
         clojure.contrib.seq
@@ -208,7 +208,7 @@ Also adds fields for the line and character count of the message."
   "Return the mtime of a Lucene index."
   [indexfile]
   (let [index (File. (str indexfile "/segments.gen"))
-        index-mtime (.lastModified (File. (str indexfile "/segments.gen")))]
+        index-mtime (.lastModified (file indexfile "segments.gen"))]
     (if (.exists index)
       index-mtime
       nil)))
@@ -304,11 +304,16 @@ Also adds fields for the line and character count of the message."
         (doseq [connection connections]
           (do-deletes connection indexfile))
         (do-optimize indexfile)))
+
+    (searcher-manager/reopen indexfile)
+
     (Thread/sleep (:reindex-frequency @config))
+
+    (send-off *agent* start-indexing indexfile connections)
+
     (catch Throwable e
       (error "%s" e)
-      (.printStackTrace e)))
-  (send-off agent start-indexing indexfile connections))
+      (.printStackTrace e))))
 
 
 
@@ -385,14 +390,15 @@ Also adds fields for the line and character count of the message."
 (defn search
   "Perform a search against `index' using `querystr'.  Returns the top
 matching documents."
-  [index querystr]
-  (with-open [reader (IndexReader/open (FSDirectory/open (file index)))
-              searcher (IndexSearcher. reader)]
-    (doall (result-seq reader
-                       (.search searcher
-                                (build-query querystr reader)
-                                nil
-                                (:max-results @config))))))
+  [indexfile querystr]
+  (let [searcher (searcher-manager/take indexfile)
+        reader (.getIndexReader searcher)]
+    (try (doall (result-seq reader
+                            (.search searcher
+                                     (build-query querystr reader)
+                                     nil
+                                     (:max-results @config))))
+         (finally (searcher-manager/release indexfile searcher)))))
 
 
 (defn handle-searches
@@ -432,6 +438,8 @@ matching documents."
                          (:backends @config))
         searcher (agent nil)
         indexer (agent nil)]
+
+    (searcher-manager/open indexfile)
 
     (send-off searcher handle-searches indexfile (Integer. port))
     (send-off indexer start-indexing indexfile connections)
