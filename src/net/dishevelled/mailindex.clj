@@ -216,9 +216,9 @@ Also adds fields for the line and character count of the message."
 
 (defmacro with-writer
   "Open a Lucene IndexWriter on `index' bound to `var' and evaluate `body'"
-  [index var & body]
+  [indexfile var & body]
   `(do
-     (let [dir# (FSDirectory/open (file ~index))]
+     (let [dir# (FSDirectory/open (file ~indexfile))]
        (IndexWriter/unlock dir#)
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
@@ -231,10 +231,12 @@ Also adds fields for the line and character count of the message."
 
 
 (defn do-deletes
-  "Remove any deletes messages from `index'"
-  [connection index]
-  (with-open [reader ^IndexReader (IndexReader/open index)]
-    (with-writer index writer
+  "Remove any deleted messages from `index'"
+  [connection indexfile]
+  (with-open [reader ^IndexReader (IndexReader/open
+                                   (FSDirectory/open
+                                    (file indexfile)))]
+    (with-writer indexfile writer
       (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
         (let [doclist (into {}
                             (for [id chunk
