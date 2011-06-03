@@ -81,3 +81,9 @@ Some examples:
 
   # Boolean madness
   from:triggs AND (to:clojure OR to:vufind) AND subject:pickles
+
+
+Licence
+-------
+
+Distributed under the Eclipse Public License. See the file "COPYING".
