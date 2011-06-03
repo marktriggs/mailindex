@@ -3,6 +3,7 @@
                  [org.clojure.contrib/java-utils "1.3.0-alpha4"]
                  [org.clojure.contrib/seq "1.3.0-alpha4"]
                  [org.clojure.contrib/def "1.3.0-alpha4"]
+                 [org.clojure.contrib/command-line "1.3.0-alpha4"]
                  [org.apache.lucene/lucene-core "3.0.3"]
                  [org.apache.lucene/lucene-highlighter "3.0.3"]
                  [javax.mail/mail "1.4.1"]
@@ -22,8 +23,7 @@
                                asm/asm
                                com.drewnoakes/metadata-extractor
                                de.l3s.boilerpipe/boilerpipe]]]
-  :dev-dependencies [[leiningen/lein-swank "1.2.0-SNAPSHOT"]
-                     [swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
+  :dev-dependencies [[swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
   :jar-exclusions [#"BCKEY.SF"]
   :warn-on-reflection true
   :main net.dishevelled.mailindex)

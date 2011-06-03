@@ -1,0 +1,134 @@
+#!/bin/sh
+
+. /etc/rc.conf
+. /etc/rc.d/functions
+
+function get_pid {
+    USERNAME=$1
+    PID=""
+    PIDFILE="$PIDPATH/mailindex-$USERNAME.pid"
+    if [ -f $PIDFILE ]; then
+	PID=`cat $PIDFILE`
+	if [ -z "$PID" ]; then
+	    rm $PIDFILE
+	else
+	    ps -p $PID > /dev/null
+	    if [ "$?" -ne "0" ]; then
+		PID=""
+		rm $PIDFILE
+	    fi
+	fi
+    fi
+}  
+
+JAR_FILE=/usr/share/clojure/mailindex.jar
+
+IS_ROOT=0
+USER=`whoami`
+if [[ -z $USER || $USER == "root" ]]; then
+    IS_ROOT=1
+fi
+
+declare -a list
+
+PIDPATH=/tmp
+LOGPATH=/tmp
+
+if [ "$IS_ROOT" -eq "1" ]; then
+
+    USERS=`cut -d":" -f1 /etc/passwd`
+    for USERNAME in ${USERS[@]}; do
+	HOME_DIR=`grep "^$USERNAME:" /etc/passwd | cut -d":" -f6`
+	if [ ! -z $HOME_DIR ]; then
+            RC_FILE="$HOME_DIR/.mailindex.rc"
+	    if [ -f $RC_FILE ]; then
+		CONF_FILE=`cat $RC_FILE`
+		if [ -f $CONF_FILE ]; then
+		    list=( "${list[@]}" "$USERNAME:$CONF_DIR" )
+		fi
+	    fi
+	fi
+    done  
+
+else
+    # the script has been run by the user
+    echo "Not running as root. Forcing user $USER."
+    USERNAME=$USER
+    RC_FILE=$HOME/.mailindex.rc
+    if [ ! -f $RC_FILE ]; then
+	echo "You must create a file $HOME/.mailindex.rc before running this script."
+	# TODO also allow a command line argument.
+	exit
+    fi
+    CONF_FILE=`cat $RC_FILE`
+    if [ ! -f $CONF_FILE ]; then
+	echo "$CONF_FILE does not exist."
+	exit
+    fi
+    list=( "${list[@]}" "$USER:$CONF_DIR" )
+fi
+
+case "$1" in
+  start)
+    stat_busy "Starting mailindex"
+    
+    for entry in ${list}; do
+	USERNAME=${entry%:*}
+	CONFIG_FILE=${entry#*:}
+	LOG_FILE="$LOGPATH/mailindex-$USERNAME.log"
+	get_pid $USERNAME
+
+	if [ -z "$PID" ]; then
+	    CMD="java -XX:NewRatio=2 -server -Xms256m -Xmx256m -jar $JAR_FILE --config-file $CONF_FILE"
+
+	    if [ "$IS_ROOT" -eq "0" ]; then
+		$CMD 2> $LOG_FILE &
+		PID=$!
+	    else
+		sudo -u $USERNAME $CMD 2> $LOG_FILE &
+		ppid=$!
+		# find child processes of sudo process (which has pid ppid)
+		sleep 1
+		for child in $(ps -o pid,ppid ax | \
+		    awk "{ if ( \$2 == $ppid ) { print \$1 }}")
+		do
+		    PID=$child
+		done
+	    fi
+	    echo $PID > $PIDFILE
+	    chown $USERNAME $PIDFILE
+	    chown $USERNAME $LOG_FILE
+	    stat_done
+	else
+	    echo "Already running for user $USERNAME (pid=$PID)."
+	    stat_fail
+	fi
+    done
+
+    ;;
+  restart)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  stop)
+    stat_busy "Stopping mailindex"
+    for entry in ${list}; do
+	USERNAME=${entry%:*}
+	CONFIG_FILE=${entry#*:}
+	get_pid $USERNAME
+
+	[ ! -z "$PID" ]  && kill $PID 
+	if [ $? -gt 0 ]; then
+	    stat_fail
+	else
+	    if [ -f $PIDFILE ]; then
+		rm $PIDFILE
+	    fi
+	    stat_done
+	fi
+    done
+    ;;
+  *)
+    echo "usage: $0 {start|stop|restart}"  
+esac
