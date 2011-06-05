@@ -26,8 +26,7 @@
         (first
          (re-seq (re-pattern (str base "/*" "(.*?)" "/" "([0-9]+)$"))
                  filename))]
-    {:group group :num num}))
-
+    {:group (.replace group "/" ".") :num num}))
 
 
 ;;;
@@ -49,7 +48,8 @@
   (let [base (-> @connection :config :base)
         cmd ["find" base "-type" "f"]
         cmd (if index-mtime
-              (concat cmd ["-mtime" (str "-" (inc (mtime-to-days index-mtime)))])
+              (concat cmd ["-mtime" (str "-" (inc
+                                              (mtime-to-days index-mtime)))])
               cmd)
         messages (set (filter #(re-find #"/[0-9]+$" %)
                               (line-seq (reader (.. Runtime

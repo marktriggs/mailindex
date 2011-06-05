@@ -102,18 +102,15 @@ Otherwise, just search for the subset.")
       (setq mailindex-headers '())
       (vconcat (mapcar (lambda (entry)
                          (let ((group-name (aref entry 0))
-                               (article-number (string-to-number
-                                                (aref entry 1)))
+                               (article-number
+                                (string-to-number (aref entry 1)))
                                (score (aref entry 2))
                                (headers (aref entry 3)))
                            (push (cons group-name
                                        (mailindex-to-nov article-number
                                                          headers))
                                  mailindex-headers))
-                         (vector
-                          (concat server (aref entry 0))    ; group name
-                          (string-to-number (aref entry 1)) ; article number
-                          (aref entry 2)))                  ; score
+                         (vector group-name article-number score))
                        (car (ignore-errors (read-from-string result))))))))
 
 
