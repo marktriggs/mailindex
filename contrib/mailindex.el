@@ -109,13 +109,15 @@ Otherwise, just search for the subset.")
                            (push (cons group-name
                                        (mailindex-to-nov article-number
                                                          headers))
-                                 mailindex-headers))
-                         (vector group-name article-number score))
+                                 mailindex-headers)
+                           (vector group-name article-number score)))
                        (car (ignore-errors (read-from-string result))))))))
 
 
 (defun mailindex-retrieve-headers (artlist artgroup)
-  (destructuring-bind (method group) (split-string artgroup ":")
+  (destructuring-bind (method group) (if (string-match ":" artgroup)
+                                         (split-string artgroup ":")
+                                       (list nil artgroup))
     (with-current-buffer nntp-server-buffer
       (erase-buffer)
       (loop for header in mailindex-headers
