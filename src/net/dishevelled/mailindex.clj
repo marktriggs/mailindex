@@ -22,10 +22,10 @@
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager])
   (:use clojure.java.io
-	[clojure.string :only [join]]
+        [clojure.string :only [join]]
         clojure.contrib.seq
         clojure.contrib.def
-	clojure.contrib.command-line)
+        clojure.contrib.command-line)
 
   (:gen-class))
 
@@ -436,16 +436,16 @@ matching documents."
 
     (reset! config (read (PushbackReader. (reader config-file))))
     (let [{:keys [port indexfile]} @config
-	  connections (map (fn [b]
-			     (require (:backend b))
-			     (let [conn (@(ns-resolve (:backend b)
-						      'get-connection)
-					 b)]
-			       (swap! conn assoc :config b)
-			       conn))
-			   (:backends @config))
-	  searcher (agent nil)
-	  indexer (agent nil)]
+          connections (map (fn [b]
+                             (require (:backend b))
+                             (let [conn (@(ns-resolve (:backend b)
+                                                      'get-connection)
+                                         b)]
+                               (swap! conn assoc :config b)
+                               conn))
+                           (:backends @config))
+          searcher (agent nil)
+          indexer (agent nil)]
 
       (send-off searcher handle-searches indexfile (Integer. port))
       (send-off indexer start-indexing indexfile connections)
