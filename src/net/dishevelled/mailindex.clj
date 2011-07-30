@@ -11,6 +11,7 @@
            (org.apache.lucene.store FSDirectory)
            (org.apache.lucene.util Version)
            (org.apache.lucene.queryParser QueryParser$Operator
+                                          QueryParser
                                           MultiFieldQueryParser)
            (java.net ServerSocket InetAddress BindException)
            (java.util Calendar Date SimpleTimeZone Vector Properties)
@@ -56,26 +57,50 @@
           (.getAddress address)))
 
 
+(defn address-to-tokens [^InternetAddress address]
+  (.replace (str (.getAddress address))
+            "@" " "))
+
+
 (defvar parse-rules
   {
-   "date"    {:value-fn (fn [^MimeMessage msg]
-                          (DateTools/dateToString
-                           (or (.getSentDate msg)
-                               (.getReceivedDate msg))
-                           DateTools$Resolution/DAY))
-              :boost 10}
+   "date" {:value-fn (fn [^MimeMessage msg]
+                       (DateTools/dateToString
+                        (or (.getSentDate msg)
+                            (.getReceivedDate msg))
+                        DateTools$Resolution/DAY))
+           :boost 10}
 
    "subject" {:value-fn (fn [^MimeMessage msg] (.getSubject msg)) :boost 5}
-   "to"      {:value-fn
-              (fn [^MimeMessage msg] (join
-                         " "
-                         (map address-to-str
-                              (.getRecipients msg Message$RecipientType/TO))))
-              :boost 2}
-   "from"    {:value-fn (fn [^MimeMessage msg] (address-to-str (first (.getFrom msg))))
-              :boost 3}
-   "body"    {}
-   "msgid"   {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))}
+
+   "to" {:value-fn
+         (fn [^MimeMessage msg] (join
+                                 " "
+                                 (map address-to-str
+                                      (.getRecipients msg Message$RecipientType/TO))))
+         :boost 2
+         :linked-fields ["to_tokens"]}
+
+   "to_tokens" {:value-fn (fn [^MimeMessage msg]
+                            (join " "
+                                  (map address-to-tokens
+                                       (.getRecipients
+                                        msg
+                                        Message$RecipientType/TO))))
+                :boost 2}
+
+   "from" {:value-fn (fn [^MimeMessage msg] (address-to-str (first (.getFrom msg))))
+           :boost 3
+           :linked-fields ["from_tokens"]}
+
+   "from_tokens" {:value-fn (fn [^MimeMessage msg]
+                              (address-to-tokens
+                               (first (.getFrom msg))))
+                  :boost 2}
+
+   "body" {}
+
+   "msgid" {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))}
    })
 
 
@@ -166,9 +191,9 @@ Also adds fields for the line and character count of the message."
   (doseq [[field rule] parse-rules]
     (when (:value-fn rule)
       (when-let [value (try ((:value-fn rule) msg)
-                            (catch Exception _
-                              (error "Warning: missing value for field '%s'"
-                                     field)
+                            (catch Exception e
+                              (error "Warning: missing value for field '%s': %s"
+                                     field e)
                               nil))]
         (.add doc (fieldpool/tokenized-field field value))))))
 
@@ -351,17 +376,42 @@ Also adds fields for the line and character count of the message."
           ["and" "or" "not"]))
 
 
+(defn expand-query [query]
+  (cond (instance? BooleanQuery query)
+        (do (doseq [clause (.clauses query)]
+              (.setQuery clause (expand-query (.getQuery clause))))
+            query)
+
+        (instance? TermQuery query)
+        (let [term (.getTerm query)]
+          (if-let [linked-fields (:linked-fields (parse-rules (.field term)))]
+            (let [new-query (BooleanQuery.)]
+              (.add new-query query BooleanClause$Occur/SHOULD)
+
+              (doseq [field linked-fields]
+                (.add new-query (TermQuery. (Term. field (.text term)))
+                      BooleanClause$Occur/SHOULD))
+
+              new-query)
+            query))
+
+        :else query))
+
+
 (defn build-query
   "Construct a Lucene query from `querystr'."
   [querystr reader]
   (let [query (BooleanQuery.)
-        all-fields (.parse (doto (MultiFieldQueryParser.
-                                  Version/LUCENE_30
-                                  (into-array (keys parse-rules))
-                                  (StandardAnalyzer. Version/LUCENE_30))
-                             (.setDefaultOperator QueryParser$Operator/AND))
-                           (normalcase querystr))]
+        all-fields (expand-query
+                    (.rewrite (.parse (doto (MultiFieldQueryParser.
+                                             Version/LUCENE_30
+                                             (into-array (keys parse-rules))
+                                             (StandardAnalyzer. Version/LUCENE_30))
+                                        (.setDefaultOperator QueryParser$Operator/AND))
+                                      (normalcase querystr))
+                              reader))]
     (.setBoost all-fields 20)
+
     (.add query all-fields BooleanClause$Occur/MUST)
 
     (when-let [terms (seq (set (map #(.getTerm %)
