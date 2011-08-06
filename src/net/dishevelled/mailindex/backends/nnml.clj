@@ -1,6 +1,6 @@
 (ns net.dishevelled.mailindex.backends.nnml
   (:import (java.util Date)
-           (java.io FileInputStream))
+           (java.io FileInputStream IOException))
   (:require clojure.set)
   (:use clojure.java.io))
 
@@ -13,10 +13,13 @@
 (defn- message-bytes
   "Return the bytes of a message."
   [^String msg]
-  (let [out (byte-array (.length (file msg)))]
-    (with-open [fis (FileInputStream. msg)]
-      (.read fis out))
-    out))
+  (try
+    (let [out (byte-array (.length (file msg)))]
+      (with-open [fis (FileInputStream. msg)]
+        (.read fis out))
+      out)
+    (catch IOException _
+      (byte-array 0))))
 
 
 (defn- filename-to-id
