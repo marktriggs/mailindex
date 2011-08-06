@@ -79,15 +79,27 @@
                                  (map address-to-str
                                       (.getRecipients msg Message$RecipientType/TO))))
          :boost 2
-         :linked-fields ["to_tokens"]}
+         :linked-fields ["to_tokens" "cc"]}
+
+   "cc" {:value-fn
+         (fn [^MimeMessage msg] (join
+                                 " "
+                                 (map address-to-str
+                                      (.getRecipients msg Message$RecipientType/CC))))
+         :boost 2
+         :linked-fields ["to_tokens" "cc"]}
 
    "to_tokens" {:value-fn (fn [^MimeMessage msg]
                             (join " "
-                                  (map address-to-tokens
-                                       (.getRecipients
-                                        msg
-                                        Message$RecipientType/TO))))
-                :boost 2}
+                                  (concat (map address-to-tokens
+                                               (.getRecipients
+                                                msg
+                                                Message$RecipientType/TO))
+                                          (map address-to-tokens
+                                               (.getRecipients
+                                                msg
+                                                Message$RecipientType/CC)))))
+                :boost 1}
 
    "from" {:value-fn (fn [^MimeMessage msg] (address-to-str (first (.getFrom msg))))
            :boost 3
