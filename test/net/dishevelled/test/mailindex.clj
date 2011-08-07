@@ -23,7 +23,7 @@
            (with-open [msg (.getResourceAsStream cl filename)]
              {:id {:group "test" :num (str n)}
               :content (.getBytes (slurp msg) "UTF-8")}))
-         (sq/indexed ["test-message-1.mbox"]))))
+         (sq/indexed ["test-message-1.mbox" "test-message-with-html-attachment.mbox"]))))
 
 
 (defn index-test-messages [f]
@@ -38,18 +38,18 @@
 (use-fixtures :once set-mock-config index-test-messages)
 
 (deftest test-body-search
-  (is (= (count (search *index* "\"You will need to define your own\""))
-         1)
+  (is (> (count (search *index* "\"You will need to define your own\""))
+         0)
       "Phrase search on message body"))
 
 (deftest test-from-search
-  (is (= (count (search *index* "from:\"Mark Triggs\""))
-         1)
+  (is (> (count (search *index* "from:\"Mark Triggs\""))
+         0)
       "From search"))
 
 (deftest test-to-search-includes-cc
-  (is (= (count (search *index* "to:\"Herman Toothrot\""))
-         1)
+  (is (> (count (search *index* "to:\"Herman Toothrot\""))
+         0)
       "To search includes CC"))
 
 (deftest test-to-search-exclude-cc
@@ -58,24 +58,29 @@
       "CC can be explicitly excluded"))
 
 (deftest test-boolean-search
-  (is (= (count (search *index* "from:\"Mark Triggs\" AND to:\"Mark Triggs\" AND \"shell script\""))
-         1)
+  (is (> (count (search *index* "from:\"Mark Triggs\" AND to:\"Mark Triggs\" AND \"shell script\""))
+         0)
       "Boolean search"))
 
 (deftest test-domain-search
-  (is (= (count (search *index* "from:\"dishevelled.net\""))
-         1)
+  (is (> (count (search *index* "from:\"dishevelled.net\""))
+         0)
       "Domain search"))
 
 (deftest test-date-search
-  (is (= (count (search *index* "date:20110806"))
-         1)
+  (is (> (count (search *index* "date:20110806"))
+         0)
       "Date search"))
 
 (deftest test-range-search
-  (is (= (count (search *index* "date:[20110806 TO 2012]"))
-         1)
+  (is (> (count (search *index* "date:[20110806 TO 2012]"))
+         0)
       "Date search"))
+
+(deftest test-html-attachment
+  (is (> (count (search *index* "\"can't believe it works\""))
+         0)
+      "HTML attachment"))
 
 
 

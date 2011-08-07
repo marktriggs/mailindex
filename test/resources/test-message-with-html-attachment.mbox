@@ -1,0 +1,35 @@
+X-From-Line: mst Sun Aug  7 13:57:46 2011
+Return-Path: <mst@dishevelled.net>
+From: Mark Triggs <mst@dishevelled.net>
+To: htmlmail@dishevelled.net
+Subject: Here is a html attachment
+User-Agent: Gnus v5.13
+Date: Sun, 07 Aug 2011 13:56:39 +1000
+X-Gnus-Mail-Source: file:~/docs/mail/incoming/inbox
+Message-ID: <87ty9toow8.fsf@dishevelled.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="=-=-="
+Lines: 21
+Xref: thweeble.telefunken.dyn.ml.org inbox:15024
+
+--=-=-=
+
+Attached...
+
+--
+Mark Triggs
+<mst@dishevelled.net>
+
+
+--=-=-=
+Content-Type: text/html
+Content-Disposition: inline; filename=test.html
+
+<html>
+<body>
+<p>I can't believe it <em>works</em></p>
+</body>
+</html>
+
+--=-=-=--
+
