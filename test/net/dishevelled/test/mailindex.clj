@@ -2,6 +2,7 @@
   (:require [clojure.contrib.seq :as sq])
   (:import (org.apache.lucene.store RAMDirectory))
   (:use clojure.test
+        clojure.java.io
         net.dishevelled.mailindex))
 
 
@@ -18,12 +19,11 @@
 
 
 (defn get-test-messages []
-  (let [cl (-> (Thread/currentThread) .getContextClassLoader)]
-    (map (fn [[n filename]]
-           (with-open [msg (.getResourceAsStream cl filename)]
-             {:id {:group "test" :num (str n)}
-              :content (.getBytes (slurp msg) "UTF-8")}))
-         (sq/indexed ["test-message-1.mbox" "test-message-with-html-attachment.mbox"]))))
+  (map (fn [[n filename]]
+         {:id {:group "test" :num (str n)}
+          :content (.getBytes (slurp (resource filename)) "UTF-8")})
+       (sq/indexed ["test-message-1.mbox"
+                    "test-message-with-html-attachment.mbox"])))
 
 
 (defn index-test-messages [f]
