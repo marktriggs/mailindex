@@ -1,9 +1,9 @@
 (ns net.dishevelled.mailindex.searcher-manager
   (:refer-clojure :exclude (take))
+  (:require [net.dishevelled.mailindex.utils :as utils])
   (:use clojure.java.io)
   (:import (org.apache.lucene.search IndexSearcher)
-           (org.apache.lucene.index IndexReader)
-           (org.apache.lucene.store FSDirectory)))
+           (org.apache.lucene.index IndexReader)))
 
 
 ;;; Locks in Clojure?  Mark!  How could you?!
@@ -70,7 +70,7 @@
   (swap! on-deck-searchers
          assoc path (IndexSearcher.
                      (IndexReader/open
-                      (FSDirectory/open (file path))))))
+                      (utils/as-directory path)))))
 
 
 (defn reopen [path]

@@ -8,7 +8,6 @@
            (org.apache.lucene.analysis SimpleAnalyzer)
            (org.apache.lucene.analysis.standard StandardAnalyzer)
            (org.apache.lucene.search.highlight QueryTermExtractor)
-           (org.apache.lucene.store FSDirectory)
            (org.apache.lucene.util Version)
            (org.apache.lucene.queryParser QueryParser$Operator
                                           QueryParser
@@ -21,7 +20,8 @@
            (javax.mail.internet MimeMessage InternetAddress MimeMultipart)
            (javax.mail Session Part Message$RecipientType))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
-            [net.dishevelled.mailindex.searcher-manager :as searcher-manager])
+            [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
+            [net.dishevelled.mailindex.utils :as utils])
   (:use clojure.java.io
         [clojure.string :only [join]]
         clojure.contrib.seq
@@ -45,6 +45,8 @@
            "yyyy-MM-dd"
            "EEE, MMM d yyyy"
            "E, M d yyyy"]))
+
+(def ^:dynamic *log-queries* true)
 
 
 ;;; Set in (main)
@@ -254,9 +256,9 @@ Also adds fields for the line and character count of the message."
 
 (defmacro with-writer
   "Open a Lucene IndexWriter on `index' bound to `var' and evaluate `body'"
-  [indexfile var & body]
+  [index var & body]
   `(do
-     (let [dir# (FSDirectory/open (file ~indexfile))]
+     (let [dir# (utils/as-directory ~index)]
        (IndexWriter/unlock dir#)
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
@@ -272,8 +274,7 @@ Also adds fields for the line and character count of the message."
   "Remove any deleted messages from `index'"
   [connection indexfile]
   (with-open [reader ^IndexReader (IndexReader/open
-                                   (FSDirectory/open
-                                    (file indexfile)))]
+                                   (utils/as-directory indexfile))]
     (with-writer indexfile writer
       (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
         (let [doclist (into {}
@@ -463,7 +464,8 @@ Also adds fields for the line and character count of the message."
 
           (.add query boolean-or BooleanClause$Occur/SHOULD)
           (.add query boolean-and BooleanClause$Occur/SHOULD))))
-    (println query)
+    (when *log-queries*
+      (println query))
     query))
 
 

@@ -24,6 +24,7 @@
                                com.drewnoakes/metadata-extractor
                                de.l3s.boilerpipe/boilerpipe]]]
   :dev-dependencies [[swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
+  :dev-resources-path "test/resources"
   :jar-exclusions [#"BCKEY.SF"]
   :warn-on-reflection true
   :main net.dishevelled.mailindex)

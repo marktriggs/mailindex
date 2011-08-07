@@ -1,0 +1,101 @@
+X-From-Line: mst Sun Aug  7 08:27:05 2011
+Return-Path: <mst@dishevelled.net>
+From: Mark Triggs <mst@dishevelled.net>
+To: Another Mark Triggs <someone@dishevelled.net>
+Cc: Herman Toothrot <foobar@dishevelled.net>
+Subject: A simple test message
+Date: Sun, 07 Aug 2011 08:26:18 +1000
+Message-ID: <87k4aqqir9.fsf@dishevelled.net>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Lines: 88
+Xref: thweeble.telefunken.dyn.ml.org inbox:15023
+
+This is a Lucene-based mail indexer that can be used with Gnus and
+nnir.el--the first non-trivial Clojure program I wrote.  Ah, memories.
+Having really fast search over all of your mail is hard to beat.
+
+
+Building it
+-----------
+
+The usual steps:
+
+  1.  Get Leiningen from http://github.com/technomancy/leiningen and put
+      the 'lein' script somewhere in your $PATH.
+
+  2.  From mailindex's root directory, run `lein uberjar'.  Lein will grab
+      all required dependencies and produce a `mailindex.jar'.
+
+
+Running it
+----------
+
+You will need to define your own "config.clj" file--mine is included for
+reference.  This contains global options (which port to listen on, where
+to store your Lucene indexes, etc.) as well as a list of backends that
+will be scanned for messages.  I use Gnus's nnml backend, so that should
+work out of the box, but you can add other backends by adding more
+files.  Just use nnml.clj as a guide.
+
+To run the thing, see the "mailindex" shell script--that's how I run
+mine.
+
+The first time you run mailindex it will run off and index all of your
+mail.  Once it has finished this, you can search it just by telnetting
+to its port and typing your query.  For example:
+
+  $ telnet localhost 4321
+  Trying 127.0.0.1...                                       
+  Connected to localhost.
+  Escape character is '^]'.
+
+  from:triggs clojure
+
+  (["misc" "6888" 18178 <headers>] ["misc" "7237" 14001 <headers>]
+   ["misc" "7440" 14001 <headers>] ["misc" "6908" 13526 <headers>]
+   ["misc" "69914" 9401 <headers>] ["misc" "7598" 6751 <headers>]
+   ["work" "76803" 6751 <headers>] ["misc" "6877" 6031 <headers>]
+   ["misc" "75410" 3502 <headers>] ["work" "74509" 3502 <headers>])
+
+Mailindex returns a bunch of 4-tuples representing matching messages.
+These consist of: the group of the message, the message number, the
+relevance score, and the message headers.  Results are sorted in
+descending order of relevance.
+
+
+Integrating with Gnus/nnir
+--------------------------
+
+"contrib/mailindex.el" contains the configuration I use for integrating
+with Gnus.  Put this into your emacs load-path, add (require 'mailindex)
+to your ~/.emacs, and then hitting 'G G' from Gnus's group buffer should
+prompt you for a query string, fire off a search and display an
+ephemeral group with matching results.  I submitted a patch to nnir.el
+to have it pull the headers straight from the data returned (which is
+much faster than hitting the disk), but you can also grab nnir.el from
+the "contrib" directory if you're not using a recent version of Gnus.
+
+
+The query syntax
+----------------
+
+Query syntax is Lucene's standard syntax, although I do attempt to be
+clever and munge queries on the fly to improve the result ordering.
+Some examples:
+
+  # Messages with a sender containing 'triggs' and the word 'clojure
+  # anywhere
+  from:triggs clojure
+
+  # Anything sent between June 2008 and January 2009 containing the word
+  # 'porcupine'
+  date:[200806 TO 200901] porcupine
+
+  # Boolean madness
+  from:triggs AND (to:clojure OR to:vufind) AND subject:pickles
+
+-- 
+Mark Triggs
+<mst@dishevelled.net>
+
