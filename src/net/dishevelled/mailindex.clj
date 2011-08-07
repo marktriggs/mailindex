@@ -394,6 +394,21 @@ Also adds fields for the line and character count of the message."
               (.setQuery clause (expand-query (.getQuery clause))))
             query)
 
+        (and (instance? PhraseQuery query))
+        (if-let [linked-fields (:linked-fields
+                                (parse-rules (.field
+                                              (first (.getTerms query)))))]
+          (let [new-query (BooleanQuery.)]
+            (.add new-query query BooleanClause$Occur/SHOULD)
+            (doseq [field linked-fields]
+              (let [phrase (PhraseQuery.)]
+                (doseq [term (.getTerms query)]
+                  (.add phrase (Term. field (.text term))))
+                (.add new-query phrase BooleanClause$Occur/SHOULD)))
+            new-query)
+          query)
+
+
         (instance? TermQuery query)
         (let [term (.getTerm query)]
           (if-let [linked-fields (:linked-fields (parse-rules (.field term)))]
