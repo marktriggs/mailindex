@@ -49,7 +49,7 @@
   "Find any messages that have been updated"
   [connection & [index-mtime]]
   (let [base (-> @connection :config :base)
-        cmd ["find" base "-type" "f"]
+        cmd ["find" "-L" base "(" "-type" "f" "-o" "-type" "l" ")"]
         cmd (if index-mtime
               (concat cmd ["-mtime" (str "-" (inc
                                               (mtime-to-days index-mtime)))])
