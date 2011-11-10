@@ -90,10 +90,10 @@ Otherwise, just search for the subset.")
                                grouplist " OR ")
                     search-string)))
 
-    (let ((proc (open-network-stream "mailindex" nil
-                                     mailindex-host
-                                     mailindex-port))
-          (result ""))
+    (lexical-let ((proc (open-network-stream "mailindex" nil
+                                             mailindex-host
+                                             mailindex-port))
+                  (result ""))
       (set-process-filter proc (lambda (proc output)
                                  (setq result (concat result output))))
       (process-send-string proc search-string)
