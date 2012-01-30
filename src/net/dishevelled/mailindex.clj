@@ -53,6 +53,25 @@
 (def config (atom nil))
 
 
+(def debug-out (atom nil))
+
+(defn debug [fmt & args]
+  (when (:debug-log @config)
+    (when-not @debug-out
+      (swap! debug-out #(or % (writer (:debug-log @config))))
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread.
+                         (fn []
+                           (try (.close @debug-out)
+                                (catch Exception _))))))
+    (.write @debug-out
+            (str (Date.)
+                 "\t"
+                 (apply format fmt args)
+                 "\n"))
+    (.flush @debug-out)))
+
+
 (defn address-to-str [^InternetAddress address]
   (format "%s <%s>"
           (or (.getPersonal address) "")
@@ -273,6 +292,7 @@ Also adds fields for the line and character count of the message."
 (defn do-deletes
   "Remove any deleted messages from `index'"
   [connection indexfile]
+  (debug "Starting a deletes run now")
   (with-open [reader ^IndexReader (IndexReader/open
                                    (utils/as-directory indexfile))]
     (with-writer indexfile writer
@@ -287,7 +307,7 @@ Also adds fields for the line and character count of the message."
               deletes ((:deleted-messages-fn @connection)
                        connection (keys doclist))]
           (doseq [d deletes]
-            (error "Deleting from index: %s" (doclist d))
+            (debug "Deleting from index: %s" (doclist d))
             (.deleteDocuments writer (Term. "id" (doclist d)))))))))
 
 

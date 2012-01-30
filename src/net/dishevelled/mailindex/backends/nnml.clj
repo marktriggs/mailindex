@@ -2,7 +2,8 @@
   (:import (java.util Date)
            (java.io FileInputStream IOException))
   (:require clojure.set)
-  (:use clojure.java.io))
+  (:use clojure.java.io
+        [net.dishevelled.mailindex :only [debug]]))
 
 
 (defn- mtime-to-days [mtime]
@@ -39,9 +40,15 @@
 (defn get-deletions
   "Return the subset of `ids' that represent deleted messages."
   [connection ids]
+  (debug "Checking deletions for connection: %s" @connection)
   (let [base (-> @connection :config :base)]
-    (filter #(not (.exists (java.io.File.
-                            (str base "/" (:group %) "/" (:num %)))))
+    (debug "Using base '%s' and working directory '%s'"
+           base
+           (System/getProperty "user.dir"))
+    (filter #(let [path (str base "/" (:group %) "/" (:num %))
+                   path-exists? (.exists (java.io.File. path))]
+               (debug "Does '%s' exist?  %s" path path-exists?)
+               (not path-exists?))
             ids)))
 
 
