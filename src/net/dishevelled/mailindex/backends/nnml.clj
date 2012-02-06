@@ -33,6 +33,13 @@
     {:group (.replace group "/" ".") :num num}))
 
 
+(defn- id-to-filename
+  "Turn a group id (group + number) back into a filesystem path"
+  [base id]
+  (str base "/" (.replace (:group id) "." "/") "/" (:num id)))
+
+
+
 ;;;
 ;;; Our public interface...
 ;;;
@@ -45,7 +52,7 @@
     (debug "Using base '%s' and working directory '%s'"
            base
            (System/getProperty "user.dir"))
-    (filter #(let [path (str base "/" (:group %) "/" (:num %))
+    (filter #(let [path (id-to-filename base %)
                    path-exists? (.exists (java.io.File. path))]
                (debug "Does '%s' exist?  %s" path path-exists?)
                (not path-exists?))
