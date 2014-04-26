@@ -21,10 +21,10 @@
            (javax.mail Session Part Message$RecipientType))
   (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
-            [net.dishevelled.mailindex.utils :as utils])
+            [net.dishevelled.mailindex.utils :as utils]
+            [clojure.tools.cli :refer [parse-opts]])
   (:use clojure.java.io
-        [clojure.string :only [join]]
-        clojure.contrib.command-line)
+        [clojure.string :only [join]])
 
   (:gen-class))
 
@@ -525,13 +525,36 @@ matching documents."
 
 ;;; The main bit...
 
-(defn -main [& args]
-  (with-command-line args
-    "Usage: [--config-file config.clj]"
-    [[config-file "the config file" "config.clj"]
-     ]
+(def cli-options
+  [["-c" "--config-file FILE" "Configuration file."
+    :default "config.clj"]
+   ["-h" "--help" "Display this help message."]])
 
-    (reset! config (read (PushbackReader. (reader config-file))))
+(defn usage [options-summary]
+  (->> ["Usage: [--config-file config.clj]"
+        "Options:"
+        options-summary]
+       (join \newline)))
+
+(defn error-msg [errors]
+  (str "The following errors occurred while parsing your command:\n\n"
+       (join \newline errors)))
+
+(defn exit [status msg]
+  (println msg)
+  (System/exit status))
+
+(defn -main [& args]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
+
+    ;; Handle help and error conditions
+    (cond
+     (:help options) (exit 0 (usage summary))
+     (not= (count arguments) 0) (exit 1 (usage summary))
+     errors (exit 1 (error-msg errors)))
+
+    ;; Execute program with options
+    (reset! config (read (PushbackReader. (reader (:config-file options)))))
     (let [{:keys [port indexfile]} @config
           connections (map (fn [b]
                              (require (:backend b))
@@ -546,4 +569,5 @@ matching documents."
 
       (send-off searcher handle-searches indexfile (Integer. port))
       (send-off indexer start-indexing indexfile connections)
-      (await indexer searcher))))
+      (await indexer searcher)))
+  )
