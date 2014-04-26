@@ -1,9 +1,9 @@
 (ns net.dishevelled.mailindex.backends.nnml
-  (:import (java.util Date)
-           (java.io FileInputStream IOException))
-  (:require clojure.set)
-  (:use clojure.java.io
-        [net.dishevelled.mailindex :only [debug]]))
+  (:require [clojure.java.io :refer [file reader]]
+            [net.dishevelled.mailindex :refer [debug]]
+            [clojure.set])
+  (:import (java.io FileInputStream IOException)
+           (java.util Date)))
 
 
 (defn- mtime-to-days [mtime]

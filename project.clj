@@ -1,14 +1,11 @@
 (defproject mailindex "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.3.0-alpha4"]
-                 [org.clojure.contrib/java-utils "1.3.0-alpha4"]
-                 [org.clojure.contrib/seq "1.3.0-alpha4"]
-                 [org.clojure.contrib/def "1.3.0-alpha4"]
-                 [org.clojure.contrib/command-line "1.3.0-alpha4"]
+  :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.clojure/tools.cli "0.3.1"]
                  [org.apache.lucene/lucene-core "3.0.3"]
                  [org.apache.lucene/lucene-highlighter "3.0.3"]
-                 [javax.mail/mail "1.4.1"]
-                 [org.apache.tika/tika-core "0.9"]
-                 [org.apache.tika/tika-parsers "0.9"
+                 [javax.mail/mail "1.4.7"]
+                 [org.apache.tika/tika-core "1.5"]
+                 [org.apache.tika/tika-parsers "1.5"
                   :exclusions [edu.ucar/netcdf
                                commons-httpclient/commons-httpclient
                                org.apache.james/apache-mime4j
@@ -23,8 +20,8 @@
                                asm/asm
                                com.drewnoakes/metadata-extractor
                                de.l3s.boilerpipe/boilerpipe]]]
-  :dev-dependencies [[swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
-  :dev-resources-path "test/resources"
+  :profiles {:dev {:resource-paths ["test/resources"]}}
   :jar-exclusions [#"BCKEY.SF"]
-  :warn-on-reflection true
+  :global-vars {*warn-on-reflection* true}
+  :aot [net.dishevelled.mailindex]
   :main net.dishevelled.mailindex)

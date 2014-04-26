@@ -1,33 +1,28 @@
 (ns net.dishevelled.mailindex
-  (:import (org.apache.lucene.index IndexReader IndexWriter
-                                    IndexWriter$MaxFieldLength Term)
-           (org.apache.lucene.search BooleanQuery TopDocs PhraseQuery BooleanClause$Occur TermQuery)
-           (org.apache.lucene.document Document Field Field$Store
-                                       Field$Index DateTools
-                                       DateTools$Resolution)
-           (org.apache.lucene.analysis SimpleAnalyzer)
-           (org.apache.lucene.analysis.standard StandardAnalyzer)
-           (org.apache.lucene.search.highlight QueryTermExtractor)
-           (org.apache.lucene.util Version)
-           (org.apache.lucene.queryParser QueryParser$Operator
-                                          QueryParser
-                                          MultiFieldQueryParser)
-           (java.net ServerSocket InetAddress BindException)
-           (java.util Calendar Date SimpleTimeZone Vector Properties)
-           (java.text SimpleDateFormat)
-           (java.io File PushbackReader ByteArrayInputStream)
-
-           (javax.mail.internet MimeMessage InternetAddress MimeMultipart)
-           (javax.mail Session Part Message$RecipientType))
-  (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
+  (:require [clojure.java.io :refer [file reader writer]]
+            [clojure.string :refer [join]]
+            [clojure.tools.cli :refer [parse-opts]]
+            [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
             [net.dishevelled.mailindex.utils :as utils])
-  (:use clojure.java.io
-        [clojure.string :only [join]]
-        clojure.contrib.seq
-        clojure.contrib.def
-        clojure.contrib.command-line)
-
+  (:import (java.io ByteArrayInputStream File PushbackReader)
+           (java.net BindException InetAddress ServerSocket)
+           (java.text SimpleDateFormat)
+           (java.util Calendar Date Properties SimpleTimeZone)
+           (javax.mail Message$RecipientType Part Session)
+           (javax.mail.internet InternetAddress MimeMessage
+                                MimeMultipart)
+           (org.apache.lucene.analysis.standard StandardAnalyzer)
+           (org.apache.lucene.document DateTools DateTools$Resolution
+                                       Document)
+           (org.apache.lucene.index IndexReader IndexWriter
+                                    IndexWriter$MaxFieldLength Term)
+           (org.apache.lucene.queryParser MultiFieldQueryParser
+                                          QueryParser$Operator)
+           (org.apache.lucene.search BooleanClause$Occur BooleanQuery
+                                     PhraseQuery TermQuery TopDocs)
+           (org.apache.lucene.search.highlight QueryTermExtractor)
+           (org.apache.lucene.util Version))
   (:gen-class))
 
 
@@ -83,7 +78,7 @@
             "@" " "))
 
 
-(defvar parse-rules
+(def parse-rules
   {
    "date" {:value-fn (fn [^MimeMessage msg]
                        (DateTools/dateToString
@@ -527,13 +522,36 @@ matching documents."
 
 ;;; The main bit...
 
-(defn -main [& args]
-  (with-command-line args
-    "Usage: [--config-file config.clj]"
-    [[config-file "the config file" "config.clj"]
-     ]
+(def cli-options
+  [["-c" "--config-file FILE" "Configuration file."
+    :default "config.clj"]
+   ["-h" "--help" "Display this help message."]])
 
-    (reset! config (read (PushbackReader. (reader config-file))))
+(defn usage [options-summary]
+  (->> ["Usage: [--config-file config.clj]"
+        "Options:"
+        options-summary]
+       (join \newline)))
+
+(defn error-msg [errors]
+  (str "The following errors occurred while parsing your command:\n\n"
+       (join \newline errors)))
+
+(defn exit [status msg]
+  (println msg)
+  (System/exit status))
+
+(defn -main [& args]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
+
+    ;; Handle help and error conditions
+    (cond
+     (:help options) (exit 0 (usage summary))
+     (not= (count arguments) 0) (exit 1 (usage summary))
+     errors (exit 1 (error-msg errors)))
+
+    ;; Execute program with options
+    (reset! config (read (PushbackReader. (reader (:config-file options)))))
     (let [{:keys [port indexfile]} @config
           connections (map (fn [b]
                              (require (:backend b))
@@ -548,4 +566,5 @@ matching documents."
 
       (send-off searcher handle-searches indexfile (Integer. port))
       (send-off indexer start-indexing indexfile connections)
-      (await indexer searcher))))
+      (await indexer searcher)))
+  )

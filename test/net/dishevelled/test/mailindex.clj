@@ -1,11 +1,16 @@
 (ns net.dishevelled.test.mailindex
-  (:require [clojure.contrib.seq :as sq])
-  (:import (org.apache.lucene.store RAMDirectory))
-  (:use clojure.test
-        clojure.java.io
-        net.dishevelled.mailindex))
+  (:require [clojure.java.io :refer [resource]]
+            [clojure.test :refer :all]
+            [net.dishevelled.mailindex :refer :all])
+  (:import (org.apache.lucene.store RAMDirectory)))
 
+(defn indexed
+  "Returns a lazy sequence of [index, item] pairs, where items come
+  from 's' and indexes count up from zero.
 
+  (indexed '(a b c d))  =>  ([0 a] [1 b] [2 c] [3 d])"
+  [s]
+  (map vector (iterate inc 0) s))
 
 (def ^:dynamic *index* nil)
 (def mock-connection (atom {:config {:name "test-backend"}}))
@@ -22,7 +27,7 @@
   (map (fn [[n filename]]
          {:id {:group "test" :num (str n)}
           :content (.getBytes (slurp (resource filename)) "UTF-8")})
-       (sq/indexed ["test-message-1.mbox"
+       (indexed ["test-message-1.mbox"
                     "test-message-with-html-attachment.mbox"])))
 
 
