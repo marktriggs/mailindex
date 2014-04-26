@@ -24,7 +24,6 @@
             [net.dishevelled.mailindex.utils :as utils])
   (:use clojure.java.io
         [clojure.string :only [join]]
-        clojure.contrib.seq
         clojure.contrib.command-line)
 
   (:gen-class))

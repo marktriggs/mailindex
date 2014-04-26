@@ -4,8 +4,8 @@
            (javax.mail.internet MimeMultipart)
            (java.io ByteArrayOutputStream)
            (com.sun.mail.imap IMAPMessage IMAPFolder))
-  (:use [clojure.java.io :only [reader file]]
-        [clojure.contrib.seq :only [find-first]]))
+  (:use [clojure.java.io :only [reader file]])
+  (:require [net.dishevelled.mailindex.utils :refer [find-first]]))
 
 ;;;; Example config.clj
 
