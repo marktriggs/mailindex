@@ -3,9 +3,9 @@
                  [org.clojure/tools.cli "0.3.1"]
                  [org.apache.lucene/lucene-core "3.0.3"]
                  [org.apache.lucene/lucene-highlighter "3.0.3"]
-                 [javax.mail/mail "1.4.1"]
-                 [org.apache.tika/tika-core "0.9"]
-                 [org.apache.tika/tika-parsers "0.9"
+                 [javax.mail/mail "1.4.7"]
+                 [org.apache.tika/tika-core "1.5"]
+                 [org.apache.tika/tika-parsers "1.5"
                   :exclusions [edu.ucar/netcdf
                                commons-httpclient/commons-httpclient
                                org.apache.james/apache-mime4j
