@@ -1,5 +1,5 @@
 (ns net.dishevelled.mailindex.fieldpool
-  (:import (org.apache.lucene.document Field Field$Store Field$Index)))
+  (:import (org.apache.lucene.document Field Field$Index Field$Store)))
 
 (def field-pools (ref {}))
 

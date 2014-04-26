@@ -1,31 +1,28 @@
 (ns net.dishevelled.mailindex
-  (:import (org.apache.lucene.index IndexReader IndexWriter
-                                    IndexWriter$MaxFieldLength Term)
-           (org.apache.lucene.search BooleanQuery TopDocs PhraseQuery BooleanClause$Occur TermQuery)
-           (org.apache.lucene.document Document Field Field$Store
-                                       Field$Index DateTools
-                                       DateTools$Resolution)
-           (org.apache.lucene.analysis SimpleAnalyzer)
-           (org.apache.lucene.analysis.standard StandardAnalyzer)
-           (org.apache.lucene.search.highlight QueryTermExtractor)
-           (org.apache.lucene.util Version)
-           (org.apache.lucene.queryParser QueryParser$Operator
-                                          QueryParser
-                                          MultiFieldQueryParser)
-           (java.net ServerSocket InetAddress BindException)
-           (java.util Calendar Date SimpleTimeZone Vector Properties)
-           (java.text SimpleDateFormat)
-           (java.io File PushbackReader ByteArrayInputStream)
-
-           (javax.mail.internet MimeMessage InternetAddress MimeMultipart)
-           (javax.mail Session Part Message$RecipientType))
-  (:require [net.dishevelled.mailindex.fieldpool :as fieldpool]
+  (:require [clojure.java.io :refer :all]
+            [clojure.string :refer [join]]
+            [clojure.tools.cli :refer [parse-opts]]
+            [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
-            [net.dishevelled.mailindex.utils :as utils]
-            [clojure.tools.cli :refer [parse-opts]])
-  (:use clojure.java.io
-        [clojure.string :only [join]])
-
+            [net.dishevelled.mailindex.utils :as utils])
+  (:import (java.io ByteArrayInputStream File PushbackReader)
+           (java.net BindException InetAddress ServerSocket)
+           (java.text SimpleDateFormat)
+           (java.util Calendar Date Properties SimpleTimeZone)
+           (javax.mail Message$RecipientType Part Session)
+           (javax.mail.internet InternetAddress MimeMessage
+                                MimeMultipart)
+           (org.apache.lucene.analysis.standard StandardAnalyzer)
+           (org.apache.lucene.document DateTools DateTools$Resolution
+                                       Document)
+           (org.apache.lucene.index IndexReader IndexWriter
+                                    IndexWriter$MaxFieldLength Term)
+           (org.apache.lucene.queryParser MultiFieldQueryParser
+                                          QueryParser$Operator)
+           (org.apache.lucene.search BooleanClause$Occur BooleanQuery
+                                     PhraseQuery TermQuery TopDocs)
+           (org.apache.lucene.search.highlight QueryTermExtractor)
+           (org.apache.lucene.util Version))
   (:gen-class))
 
 

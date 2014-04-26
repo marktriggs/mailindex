@@ -1,11 +1,10 @@
 (ns net.dishevelled.mailindex.backends.nnimap
   "IMAP mailindex backend"
-  (:import (javax.mail Folder UIDFolder Part Message Session Store)
-           (javax.mail.internet MimeMultipart)
+  (:require [clojure.java.io :refer [reader]]
+            [net.dishevelled.mailindex.utils :refer [find-first]])
+  (:import (com.sun.mail.imap IMAPFolder IMAPMessage)
            (java.io ByteArrayOutputStream)
-           (com.sun.mail.imap IMAPMessage IMAPFolder))
-  (:use [clojure.java.io :only [reader file]])
-  (:require [net.dishevelled.mailindex.utils :refer [find-first]]))
+           (javax.mail Folder Session Store)))
 
 ;;;; Example config.clj
 

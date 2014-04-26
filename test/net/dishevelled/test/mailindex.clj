@@ -1,8 +1,8 @@
 (ns net.dishevelled.test.mailindex
-  (:import (org.apache.lucene.store RAMDirectory))
-  (:use clojure.test
-        clojure.java.io
-        net.dishevelled.mailindex))
+  (:require [clojure.java.io :refer :all]
+            [clojure.test :refer :all]
+            [net.dishevelled.mailindex :refer :all])
+  (:import (org.apache.lucene.store RAMDirectory)))
 
 (defn indexed
   "Returns a lazy sequence of [index, item] pairs, where items come

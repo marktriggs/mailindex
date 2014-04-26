@@ -1,9 +1,8 @@
 (ns net.dishevelled.mailindex.searcher-manager
-  (:refer-clojure :exclude (take))
   (:require [net.dishevelled.mailindex.utils :as utils])
-  (:use clojure.java.io)
-  (:import (org.apache.lucene.search IndexSearcher)
-           (org.apache.lucene.index IndexReader)))
+  (:import (org.apache.lucene.index IndexReader)
+           (org.apache.lucene.search IndexSearcher))
+  (:refer-clojure :exclude [take]))
 
 
 ;;; Locks in Clojure?  Mark!  How could you?!
