@@ -20,8 +20,8 @@
                                asm/asm
                                com.drewnoakes/metadata-extractor
                                de.l3s.boilerpipe/boilerpipe]]]
-  :dev-dependencies [[swank-clojure/swank-clojure "1.3.0-SNAPSHOT"]]
-  :dev-resources-path "test/resources"
+  :profiles {:dev {:resource-paths ["test/resources"]}}
   :jar-exclusions [#"BCKEY.SF"]
-  :warn-on-reflection true
+  :global-vars {*warn-on-reflection* true}
+  :aot [net.dishevelled.mailindex]
   :main net.dishevelled.mailindex)
