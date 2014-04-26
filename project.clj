@@ -1,7 +1,6 @@
 (defproject mailindex "0.1.0-SNAPSHOT"
   :dependencies [[org.clojure/clojure "1.3.0-alpha4"]
                  [org.clojure.contrib/seq "1.3.0-alpha4"]
-                 [org.clojure.contrib/def "1.3.0-alpha4"]
                  [org.clojure.contrib/command-line "1.3.0-alpha4"]
                  [org.apache.lucene/lucene-core "3.0.3"]
                  [org.apache.lucene/lucene-highlighter "3.0.3"]

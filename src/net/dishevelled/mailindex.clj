@@ -25,7 +25,6 @@
   (:use clojure.java.io
         [clojure.string :only [join]]
         clojure.contrib.seq
-        clojure.contrib.def
         clojure.contrib.command-line)
 
   (:gen-class))
@@ -83,7 +82,7 @@
             "@" " "))
 
 
-(defvar parse-rules
+(def parse-rules
   {
    "date" {:value-fn (fn [^MimeMessage msg]
                        (DateTools/dateToString
