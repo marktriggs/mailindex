@@ -1,5 +1,5 @@
 (ns net.dishevelled.mailindex.utils
-  (:require [clojure.java.io :refer :all])
+  (:require [clojure.java.io :refer [file]])
   (:import (org.apache.lucene.store Directory FSDirectory)))
 
 (defn as-directory [thing]

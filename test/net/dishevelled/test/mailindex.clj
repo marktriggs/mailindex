@@ -1,5 +1,5 @@
 (ns net.dishevelled.test.mailindex
-  (:require [clojure.java.io :refer :all]
+  (:require [clojure.java.io :refer [resource]]
             [clojure.test :refer :all]
             [net.dishevelled.mailindex :refer :all])
   (:import (org.apache.lucene.store RAMDirectory)))

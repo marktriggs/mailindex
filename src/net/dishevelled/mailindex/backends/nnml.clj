@@ -1,5 +1,5 @@
 (ns net.dishevelled.mailindex.backends.nnml
-  (:require [clojure.java.io :refer :all]
+  (:require [clojure.java.io :refer [file reader]]
             [net.dishevelled.mailindex :refer [debug]]
             [clojure.set])
   (:import (java.io FileInputStream IOException)

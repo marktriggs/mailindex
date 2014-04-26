@@ -1,5 +1,5 @@
 (ns net.dishevelled.mailindex
-  (:require [clojure.java.io :refer :all]
+  (:require [clojure.java.io :refer [file reader writer]]
             [clojure.string :refer [join]]
             [clojure.tools.cli :refer [parse-opts]]
             [net.dishevelled.mailindex.fieldpool :as fieldpool]
