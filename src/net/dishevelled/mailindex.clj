@@ -20,7 +20,8 @@
            (org.apache.lucene.queryParser MultiFieldQueryParser
                                           QueryParser$Operator)
            (org.apache.lucene.search BooleanClause$Occur BooleanQuery
-                                     PhraseQuery TermQuery TopDocs)
+                                     PhraseQuery TermQuery TopDocs
+                                     Sort SortField)
            (org.apache.lucene.search.highlight QueryTermExtractor)
            (org.apache.lucene.util Version))
   (:gen-class))
@@ -484,17 +485,31 @@ Also adds fields for the line and character count of the message."
     query))
 
 
+(defn extract-query-options [input]
+  (let [option-fragments (re-seq #"\{([^ ]+)\}" input)
+        querystr (reduce (fn [s [option _]] (.replace s option ""))
+                         input
+                         option-fragments)]
+    [querystr
+     (into {} (map (fn [[_ option]] (vec (.split option ":" 2)))
+                   option-fragments))]))
+
+
 (defn search
   "Perform a search against `index' using `querystr'.  Returns the top
 matching documents."
-  [indexfile querystr]
+  [indexfile input]
   (let [searcher (searcher-manager/take indexfile)
-        reader (.getIndexReader searcher)]
+        reader (.getIndexReader searcher)
+        [querystr options] (extract-query-options input)]
     (try (doall (result-seq reader
                             (.search searcher
                                      (build-query querystr reader)
                                      nil
-                                     (:max-results @config))))
+                                     (:max-results @config)
+                                     (if (= (options "sort") "date")
+                                       (Sort. (SortField. "date" SortField/STRING true))
+                                       Sort/RELEVANCE))))
          (finally (searcher-manager/release indexfile searcher)))))
 
 
