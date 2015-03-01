@@ -27,6 +27,8 @@
   (:gen-class))
 
 
+(def MAX_PART_BYTES (* 20 1024 1024))
+
 (def date-output-format
      (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
        (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
@@ -182,15 +184,18 @@
   "Recursively parses a MIME part converting it into a sequence of strings."
   [^Part part]
   (try
-    (let [content (.getContent part)]
-      (condp re-find (.toLowerCase (.getContentType part))
-        #"^text/(plain|calendar)" [(if (string? content)
-                                     content
-                                     (slurp content))]
-        #"^text/(html|xml)" [(strip-html content)]
-        #"^message/rfc822" (parse-mime-part content)
-        #"^multipart/" (parse-mime-multipart (.getContent part))
-        []))
+    (if (> (.getSize part) MAX_PART_BYTES)
+      (do (println "Skipping giant part: " (.getSize part))
+          [])
+      (let [content (.getContent part)]
+        (condp re-find (.toLowerCase (.getContentType part))
+          #"^text/(plain|calendar)" [(if (string? content)
+                                       content
+                                       (slurp content))]
+          #"^text/(html|xml)" [(strip-html content)]
+          #"^message/rfc822" (parse-mime-part content)
+          #"^multipart/" (parse-mime-multipart (.getContent part))
+          [])))
     (catch java.io.UnsupportedEncodingException e
       [])))
 
