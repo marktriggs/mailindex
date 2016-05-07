@@ -179,25 +179,29 @@
             (org.apache.tika.parser.ParseContext.))
     (.toString content)))
 
+(defn extract-part-metadata [^Part part]
+  (remove nil? [(.getContentType part) (.getFileName part)]))
 
 (defn parse-mime-part
   "Recursively parses a MIME part converting it into a sequence of strings."
   [^Part part]
-  (try
-    (if (> (.getSize part) MAX_PART_BYTES)
-      (do (println "Skipping giant part: " (.getSize part))
-          [])
-      (let [content (.getContent part)]
-        (condp re-find (.toLowerCase (.getContentType part))
-          #"^text/(plain|calendar)" [(if (string? content)
-                                       content
-                                       (slurp content))]
-          #"^text/(html|xml)" [(strip-html content)]
-          #"^message/rfc822" (parse-mime-part content)
-          #"^multipart/" (parse-mime-multipart (.getContent part))
-          [])))
-    (catch java.io.UnsupportedEncodingException e
-      [])))
+  (concat
+   (extract-part-metadata part)
+   (try
+     (if (> (.getSize part) MAX_PART_BYTES)
+       (do (println "Skipping giant part: " (.getSize part))
+           [])
+       (let [content (.getContent part)]
+         (condp re-find (.toLowerCase (.getContentType part))
+           #"^text/(plain|calendar)" [(if (string? content)
+                                        content
+                                        (slurp content))]
+           #"^text/(html|xml)" [(strip-html content)]
+           #"^message/rfc822" (parse-mime-part content)
+           #"^multipart/" (parse-mime-multipart (.getContent part))
+           [])))
+     (catch java.io.UnsupportedEncodingException e
+       []))))
 
 
 
