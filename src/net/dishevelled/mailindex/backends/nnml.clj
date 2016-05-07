@@ -2,23 +2,36 @@
   (:require [clojure.java.io :refer [file reader]]
             [net.dishevelled.mailindex :refer [debug]]
             [clojure.set])
-  (:import (java.io FileInputStream IOException)
-           (java.util Date)))
-
+  (:import (java.io InputStream FileInputStream ByteArrayOutputStream IOException)
+           (java.util Date)
+           (java.util.zip GZIPInputStream)))
 
 (defn- mtime-to-days [mtime]
   (let [now (.getTime (Date.))]
     (int (/ (- now mtime) 1000 60 60 24))))
 
 
+(defn input-stream-for-file [file]
+  (let [fis (FileInputStream. file)]
+    (if (.endsWith (.getName file) ".gz")
+      (GZIPInputStream. fis)
+      fis)))
+
 (defn- message-bytes
   "Return the bytes of a message."
   [^String msg]
   (try
-    (let [out (byte-array (.length (file msg)))]
-      (with-open [fis (FileInputStream. msg)]
-        (.read fis out))
-      out)
+    (let [f (file msg)
+          buf (byte-array 4096)
+          out (ByteArrayOutputStream. (.length f))]
+      ;; Our initial length is really just a guess here.  We'll be right for
+      ;; uncompressed files and wrong for everything else :)
+      (with-open [^InputStream is (input-stream-for-file f)]
+        (loop [len (.read is buf)]
+          (when (>= len 0)
+            (.write out buf 0 len)
+            (recur (.read is buf)))))
+      (.toByteArray out))
     (catch IOException _
       (byte-array 0))))
 
@@ -28,7 +41,7 @@
   [base filename]
   (let [[whole group num]
         (first
-         (re-seq (re-pattern (str base "/*" "(.*?)" "/" "([0-9]+)$"))
+         (re-seq (re-pattern (str base "/*" "(.*?)" "/" "([0-9]+)(:?\\.gz)?$"))
                  filename))]
     {:group (.replace group "/" ".") :num num}))
 
@@ -53,7 +66,8 @@
            base
            (System/getProperty "user.dir"))
     (filter #(let [path (id-to-filename base %)
-                   path-exists? (.exists (java.io.File. path))]
+                   path-exists? (or (.exists (java.io.File. path))
+                                    (.exists (java.io.File. (str path ".gz"))))]
                (debug "Does '%s' exist?  %s" path path-exists?)
                (not path-exists?))
             ids)))
@@ -68,7 +82,7 @@
               (concat cmd ["-mtime" (str "-" (inc
                                               (mtime-to-days index-mtime)))])
               cmd)
-        messages (set (filter #(re-find #"/[0-9]+$" %)
+        messages (set (filter #(re-find #"/[0-9]+(\.gz)?$" %)
                               (line-seq (reader (.. Runtime
                                                     getRuntime
                                                     (exec (into-array cmd))
