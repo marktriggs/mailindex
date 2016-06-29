@@ -171,7 +171,7 @@
 
 
 (defn strip-html [^String s]
-  (let [content (org.apache.tika.sax.WriteOutContentHandler. 1000000)]
+  (let [content (org.apache.tika.sax.WriteOutContentHandler. (* MAX_PART_BYTES 6))]
     (.parse (org.apache.tika.parser.html.HtmlParser.)
             (java.io.ByteArrayInputStream. (.getBytes s))
             content
@@ -188,8 +188,11 @@
   (concat
    (extract-part-metadata part)
    (try
-     (if (> (.getSize part) MAX_PART_BYTES)
-       (do (println "Skipping giant part: " (.getSize part))
+     (if (and (> (.getSize part) MAX_PART_BYTES)
+              (not (re-find #"^multipart/" (.toLowerCase (.getContentType part)))))
+       (do (println (format "Skipping giant part: (type: %s) %s"
+                            (.toLowerCase (.getContentType part))
+                             (.getSize part)))
            [])
        (let [content (.getContent part)]
          (condp re-find (.toLowerCase (.getContentType part))
