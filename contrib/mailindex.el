@@ -90,28 +90,49 @@ Otherwise, just search for the subset.")
                                grouplist " OR ")
                     search-string)))
 
-    (lexical-let ((proc (open-network-stream "mailindex" nil
-                                             mailindex-host
-                                             mailindex-port))
-                  (result ""))
-      (set-process-filter proc (lambda (proc output)
-                                 (setq result (concat result output))))
-      (process-send-string proc search-string)
-      (while (zerop (process-exit-status proc))
-        (sit-for 0.1))
+    (lexical-let* ((proc (open-network-stream "mailindex" nil
+                                              mailindex-host
+                                              mailindex-port))
+                   (buffer nil)
+                   (entries ())
+                   (process-entry (lambda (entry)
+                                    (let ((group-name (aref entry 0))
+                                          (article-number
+                                           (string-to-number (aref entry 1)))
+                                          (score (aref entry 2))
+                                          (headers (aref entry 3)))
+                                      (push (cons group-name
+                                                  (mailindex-to-nov article-number
+                                                                    headers))
+                                            mailindex-headers)
+                                      (vector group-name article-number score)))))
+
       (setq mailindex-headers '())
-      (vconcat (mapcar (lambda (entry)
-                         (let ((group-name (aref entry 0))
-                               (article-number
-                                (string-to-number (aref entry 1)))
-                               (score (aref entry 2))
-                               (headers (aref entry 3)))
-                           (push (cons group-name
-                                       (mailindex-to-nov article-number
-                                                         headers))
-                                 mailindex-headers)
-                           (vector group-name article-number score)))
-                       (car (ignore-errors (read-from-string result))))))))
+
+      (set-process-filter proc (lambda (proc output)
+                                 ;; Load the output into our read buffer, discarding the leading "(" if this is our first chunk of output.
+                                 (when (> (length output) 0)
+                                   (if buffer
+                                       (setq buffer (concat buffer output))
+                                     (setq buffer (substring output 1))))
+
+                                 ;; read as many complete entries as we can
+                                 (let (read-result)
+                                   (while (setq read-result (ignore-errors (read-from-string buffer)))
+                                     (destructuring-bind (next-entry . offset) read-result
+                                       (push (funcall process-entry next-entry)
+                                             entries)
+                                       (setq buffer (substring buffer offset)))))))
+
+      (process-send-string proc search-string)
+
+      ;; while the process hasn't finished or there's still stuff in our buffer...
+      (while (or (zerop (process-exit-status proc))
+                 (not buffer)
+                 (not (string-match "^)\n+" buffer)))
+        (accept-process-output proc 0 200))
+
+      (vconcat entries))))
 
 
 (defun mailindex-retrieve-headers (artlist artgroup)
