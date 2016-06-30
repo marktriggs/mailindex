@@ -1,8 +1,9 @@
 (defproject mailindex "0.1.0-SNAPSHOT"
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/tools.cli "0.3.1"]
-                 [org.apache.lucene/lucene-core "3.0.3"]
-                 [org.apache.lucene/lucene-highlighter "3.0.3"]
+                 [org.apache.lucene/lucene-core "6.1.0"]
+                 [org.apache.lucene/lucene-queryparser "6.1.0"]
+                 [org.apache.lucene/lucene-highlighter "6.1.0"]
                  [javax.mail/mail "1.4.7"]
                  [org.apache.tika/tika-core "1.5"]
                  [org.apache.tika/tika-parsers "1.5"

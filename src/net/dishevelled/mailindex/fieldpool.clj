@@ -1,12 +1,16 @@
 (ns net.dishevelled.mailindex.fieldpool
-  (:import (org.apache.lucene.document Field Field$Index Field$Store)))
+  (:import (org.apache.lucene.document Field TextField StringField SortedDocValuesField Field$Store)
+           (org.apache.lucene.util BytesRef)))
 
 (def field-pools (ref {}))
 
-(defn- new-pool [name store tokenize]
+(defn- new-pool [^String name store tokenize]
   "Create a new pool of Field objects for a given field type."
-  (ref {:next-available 0
-        :fields (repeatedly #(Field. name "" store tokenize))}))
+  (let [construct-field (if tokenize
+                          (fn [] (TextField. name "" (if store Field$Store/YES Field$Store/NO)))
+                          (fn [] (StringField. name "" (if store Field$Store/YES Field$Store/NO))))]
+    (ref {:next-available 0
+          :fields (repeatedly construct-field)})))
 
 
 (defn- next-field [pool]
@@ -24,7 +28,7 @@
      (alter field-pools assoc name (new-pool name store tokenize))))
 
   (let [^Field field (next-field (@field-pools name))]
-    (when val (.setValue field ^String val))
+    (when val (.setStringValue field ^String val))
     field))
 
 
@@ -35,23 +39,22 @@
      (alter pool assoc :next-available 0))))
 
 
+(defn sort-field [^String name ^String val]
+  "Create a field we can sort on"
+  (SortedDocValuesField. name (BytesRef. val)))
+
+
 (defn tokenized-field [name val]
   "Create a tokenized, stored field."
-  (make-field name Field$Store/YES Field$Index/ANALYZED val))
+  (make-field name true true val))
 
 
 (defn tokenized-unstored-field [name val]
   "Create a tokenized, stored field."
-  (make-field name Field$Store/NO Field$Index/ANALYZED val))
-
-
-(defn untokenized-field [name val]
-  "Create an untokenized, unstored field."
-  (make-field name Field$Store/NO Field$Index/NOT_ANALYZED val))
+  (make-field name false true val))
 
 
 (defn stored-field [^String name ^String val]
   "Create a stored, untokenized field."
-  (doto (make-field name Field$Store/YES Field$Index/NOT_ANALYZED val)
-    (.setOmitNorms true)))
+  (make-field name true false val))
 

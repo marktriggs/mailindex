@@ -15,34 +15,36 @@
            (org.apache.lucene.analysis.standard StandardAnalyzer)
            (org.apache.lucene.document DateTools DateTools$Resolution
                                        Document)
-           (org.apache.lucene.index IndexReader IndexWriter
-                                    IndexWriter$MaxFieldLength Term)
-           (org.apache.lucene.queryParser MultiFieldQueryParser
-                                          QueryParser$Operator)
-           (org.apache.lucene.search BooleanClause$Occur BooleanQuery
-                                     PhraseQuery TermQuery TopDocs
-                                     Sort SortField)
-           (org.apache.lucene.search.highlight QueryTermExtractor)
-           (org.apache.lucene.util Version))
+           (org.apache.lucene.store Directory)
+           (org.apache.lucene.index DirectoryReader IndexReader IndexWriter
+                                    IndexWriterConfig MultiFields Term)
+           (org.apache.lucene.queryparser.classic MultiFieldQueryParser
+                                                  QueryParser$Operator)
+           (org.apache.lucene.search IndexSearcher BooleanClause$Occur
+                                     BooleanClause BoostQuery BooleanQuery
+                                     BooleanQuery$Builder PhraseQuery
+                                     PhraseQuery$Builder TermQuery TopDocs
+                                     ScoreDoc Sort SortField SortField$Type)
+           (org.apache.lucene.search.highlight QueryTermExtractor WeightedTerm)
+           (org.apache.lucene.util Bits Version))
   (:gen-class))
-
 
 (def MAX_PART_BYTES (* 20 1024 1024))
 
-(def date-output-format
-     (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
-       (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
+(def ^SimpleDateFormat date-output-format
+  (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss Z")
+    (.setTimeZone (SimpleTimeZone. 0 "UTF"))))
 
 
 (def date-formatters
-     (map #(doto (SimpleDateFormat. %)
-             (.setTimeZone (SimpleTimeZone. 0 "UTF")))
-          ["EEE, dd MMM yyyy"
-           "dd MMM yyyy"
-           "E d MMM yyyy"
-           "yyyy-MM-dd"
-           "EEE, MMM d yyyy"
-           "E, M d yyyy"]))
+  (map #(doto (SimpleDateFormat. %)
+          (.setTimeZone (SimpleTimeZone. 0 "UTF")))
+        ["EEE, dd MMM yyyy"
+         "dd MMM yyyy"
+         "E d MMM yyyy"
+         "yyyy-MM-dd"
+         "EEE, MMM d yyyy"
+         "E, M d yyyy"]))
 
 (def ^:dynamic *log-queries* true)
 
@@ -60,14 +62,14 @@
       (.addShutdownHook (Runtime/getRuntime)
                         (Thread.
                          (fn []
-                           (try (.close @debug-out)
+                           (try (.close ^java.io.Writer @debug-out)
                                 (catch Exception _))))))
-    (.write @debug-out
+    (.write ^java.io.Writer @debug-out
             (str (Date.)
                  "\t"
                  (apply format fmt args)
                  "\n"))
-    (.flush @debug-out)))
+    (.flush ^java.io.Writer @debug-out)))
 
 
 (defn address-to-str [^InternetAddress address]
@@ -88,7 +90,8 @@
                         (or (.getSentDate msg)
                             (.getReceivedDate msg))
                         DateTools$Resolution/DAY))
-           :boost 10}
+           :boost 10
+           :for-sorting true}
 
    "subject" {:value-fn (fn [^MimeMessage msg] (.getSubject msg)) :boost 5}
 
@@ -141,7 +144,7 @@
 (defn error [fmt & args]
   (.println System/err (apply format fmt args)))
 
-(defn get-field [^Document doc field]
+(defn get-field ^String [^Document doc field]
   "Return the first value for a given field from a Lucene document."
   (first (.getValues doc field)))
 
@@ -151,14 +154,16 @@
        (do ~@body)))
 
 
-(defn count-lines [s]
-  (reduce (fn [cnt ch]
-            (if (= ch \newline)
-              (inc cnt)
-              cnt))
-          0
-          s))
-
+(defn count-lines [^String s]
+  (loop [i (dec (count s))
+         result 0]
+    (if (>= i 0)
+      (recur
+       (dec i)
+       (if (= (.charAt s i) \newline)
+         (inc result)
+         result))
+      result)))
 
 
 ;;; Message parsing
@@ -167,11 +172,11 @@
 
 (defn parse-mime-multipart [^MimeMultipart multipart]
   (mapcat #(parse-mime-part (.getBodyPart multipart (int %)))
-          (range (.getCount multipart))))
+           (range (.getCount multipart))))
 
 
 (defn strip-html [^String s]
-  (let [content (org.apache.tika.sax.WriteOutContentHandler. (* MAX_PART_BYTES 6))]
+  (let [content (org.apache.tika.sax.WriteOutContentHandler. (int (* MAX_PART_BYTES 6)))]
     (.parse (org.apache.tika.parser.html.HtmlParser.)
             (java.io.ByteArrayInputStream. (.getBytes s))
             content
@@ -192,17 +197,17 @@
               (not (re-find #"^multipart/" (.toLowerCase (.getContentType part)))))
        (do (println (format "Skipping giant part: (type: %s) %s"
                             (.toLowerCase (.getContentType part))
-                             (.getSize part)))
+                            (.getSize part)))
            [])
        (let [content (.getContent part)]
          (condp re-find (.toLowerCase (.getContentType part))
            #"^text/(plain|calendar)" [(if (string? content)
                                         content
                                         (slurp content))]
-           #"^text/(html|xml)" [(strip-html content)]
-           #"^message/rfc822" (parse-mime-part content)
-           #"^multipart/" (parse-mime-multipart (.getContent part))
-           [])))
+                #"^text/(html|xml)" [(strip-html content)]
+                #"^message/rfc822" (parse-mime-part content)
+                #"^multipart/" (parse-mime-multipart (.getContent part))
+                [])))
      (catch java.io.UnsupportedEncodingException e
        []))))
 
@@ -212,7 +217,7 @@
 
 (defn load-body
   "Load the contents of the `body` seq into a Lucene `doc'.
-Also adds fields for the line and character count of the message."
+  Also adds fields for the line and character count of the message."
   [^Document doc ^MimeMessage msg]
 
   (let [parts (parse-mime-part msg)]
@@ -236,7 +241,10 @@ Also adds fields for the line and character count of the message."
                               (error "Warning: missing value for field '%s': %s"
                                      field e)
                               nil))]
-        (.add doc (fieldpool/tokenized-field field value))))))
+        (if (:for-sorting rule)
+          (do (.add doc (fieldpool/stored-field field value))
+              (.add doc (fieldpool/sort-field (str field "-sort") value)))
+          (.add doc (fieldpool/tokenized-field field value)))))))
 
 
 (defn parse-message
@@ -286,14 +294,12 @@ Also adds fields for the line and character count of the message."
   [index var & body]
   `(do
      (let [dir# (utils/as-directory ~index)]
-       (IndexWriter/unlock dir#)
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
-                          (StandardAnalyzer. Version/LUCENE_30)
-                          IndexWriter$MaxFieldLength/UNLIMITED)
-                     (.setRAMBufferSizeMB 20)
-                     (.setUseCompoundFile false))]
+                          (doto (IndexWriterConfig. (doto (StandardAnalyzer.)
+                                                      (.setVersion Version/LUCENE_6_1_0)))
+                            (.setUseCompoundFile false))))]
          ~@body))))
 
 
@@ -301,29 +307,24 @@ Also adds fields for the line and character count of the message."
   "Remove any deleted messages from `index'"
   [connection indexfile]
   (debug "Starting a deletes run now")
-  (with-open [reader ^IndexReader (IndexReader/open
+  (with-open [reader ^IndexReader (DirectoryReader/open
                                    (utils/as-directory indexfile))]
-    (with-writer indexfile writer
-      (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
-        (let [doclist (into {}
-                            (for [id chunk
-                                  :when (not (.isDeleted reader id))
-                                  :let [doc (.document reader id)]]
-                              [{:group (get-field doc "group")
-                                :num (get-field doc "num")}
-                               (get-field doc "id")]))
-              deletes ((:deleted-messages-fn @connection)
-                       connection (keys doclist))]
-          (doseq [d deletes]
-            (debug "Deleting from index: %s" (doclist d))
-            (.deleteDocuments writer (Term. "id" (doclist d)))))))))
-
-
-(defn do-optimize
-  "Optimize `index'"
-  [index]
-  (with-writer index iw
-    (.optimize iw)))
+    (let [live-docs ^Bits (MultiFields/getLiveDocs reader)]
+      (with-writer indexfile writer
+        (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
+          (let [doclist (into {}
+                              (for [id chunk
+                                    :when (or (not live-docs) (.get live-docs id))
+                                    :let [doc (.document reader id)]]
+                                [{:group (get-field doc "group")
+                                  :num (get-field doc "num")}
+                                 (get-field doc "id")]))
+                deletes ((:deleted-messages-fn @connection)
+                         connection (keys doclist))]
+            (doseq [d deletes]
+              (debug "Deleting from index: %s" (doclist d))
+              (.deleteDocuments writer
+                                ^"[Lorg.apache.lucene.index.Term;" (into-array [(Term. "id" ^String (doclist d))])))))))))
 
 
 (defn index
@@ -336,9 +337,9 @@ Also adds fields for the line and character count of the message."
         (when (zero? (mod cnt 1000))
           (error "\nmsgs/sec: %.2f"
                  (float (/ cnt
-                            (inc (/ (- (System/currentTimeMillis)
-                                       starttime)
-                                    1000))))))
+                           (inc (/ (- (System/currentTimeMillis)
+                                      starttime)
+                                   1000))))))
         (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
                 (index-message iw (try (parse-message (first messages) connection)
                                        (catch Exception e
@@ -371,8 +372,7 @@ Also adds fields for the line and character count of the message."
                  iw)))
       (when (time-to-optimise?)
         (doseq [connection connections]
-          (do-deletes connection indexfile))
-        (do-optimize indexfile)))
+          (do-deletes connection indexfile))))
 
     (searcher-manager/reopen indexfile)
 
@@ -391,7 +391,7 @@ Also adds fields for the line and character count of the message."
 (defn result-seq
   "Returns a lazy seq of results from a TopDocs object."
   [^IndexReader ir ^TopDocs topdocs]
-  (for [scoredoc (.scoreDocs topdocs)
+  (for [^ScoreDoc scoredoc (.scoreDocs topdocs)
         :let [doc (.document ir (.doc scoredoc))]]
     [(get-field doc "group")
      (get-field doc "num")
@@ -408,7 +408,7 @@ Also adds fields for the line and character count of the message."
 
 (defn normalcase
   "Normalise the case of a query string."
-  [s]
+  [^String s]
   (reduce (fn [^String s ^String op]
             (.replaceAll s (str " " op " ") (str " " (. op toUpperCase) " ")))
           (.replaceAll (.toLowerCase s)
@@ -419,36 +419,38 @@ Also adds fields for the line and character count of the message."
 
 (defn expand-query [query]
   (cond (instance? BooleanQuery query)
-        (do (doseq [clause (.clauses query)]
-              (.setQuery clause (expand-query (.getQuery clause))))
-            query)
+        (let [new-query (BooleanQuery$Builder.)]
+          (doseq [^BooleanClause clause (.clauses ^BooleanQuery query)]
+            (.add new-query
+                  (expand-query (.getQuery clause))
+                  (.getOccur clause)))
+          (.build new-query))
 
         (and (instance? PhraseQuery query))
         (if-let [linked-fields (:linked-fields
                                 (parse-rules (.field
-                                              (first (.getTerms query)))))]
-          (let [new-query (BooleanQuery.)]
+                                              ^Term (first (.getTerms ^PhraseQuery query)))))]
+          (let [new-query (BooleanQuery$Builder.)]
             (.add new-query query BooleanClause$Occur/SHOULD)
-            (doseq [field linked-fields]
-              (let [phrase (PhraseQuery.)]
-                (doseq [term (.getTerms query)]
+            (doseq [^String field linked-fields]
+              (let [phrase (PhraseQuery$Builder.)]
+                (doseq [^Term term (.getTerms ^PhraseQuery query)]
                   (.add phrase (Term. field (.text term))))
-                (.add new-query phrase BooleanClause$Occur/SHOULD)))
-            new-query)
+                (.add new-query (.build phrase) BooleanClause$Occur/SHOULD)))
+            (.build new-query))
           query)
 
-
         (instance? TermQuery query)
-        (let [term (.getTerm query)]
+        (let [term (.getTerm ^TermQuery query)]
           (if-let [linked-fields (:linked-fields (parse-rules (.field term)))]
-            (let [new-query (BooleanQuery.)]
+            (let [new-query (BooleanQuery$Builder.)]
               (.add new-query query BooleanClause$Occur/SHOULD)
 
-              (doseq [field linked-fields]
+              (doseq [^String field linked-fields]
                 (.add new-query (TermQuery. (Term. field (.text term)))
                       BooleanClause$Occur/SHOULD))
 
-              new-query)
+              (.build new-query))
             query))
 
         :else query))
@@ -457,27 +459,25 @@ Also adds fields for the line and character count of the message."
 (defn build-query
   "Construct a Lucene query from `querystr'."
   [querystr reader]
-  (let [query (BooleanQuery.)
+  (let [query (BooleanQuery$Builder.)
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
-                                             Version/LUCENE_30
                                              (into-array (keys parse-rules))
-                                             (StandardAnalyzer. Version/LUCENE_30))
+                                             (doto (StandardAnalyzer.)
+                                               (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       (normalcase querystr))
                               reader))]
-    (.setBoost all-fields 20)
+    (.add query (BoostQuery. all-fields 20) BooleanClause$Occur/MUST)
 
-    (.add query all-fields BooleanClause$Occur/MUST)
+    (when-let [terms (seq (set (map #(.getTerm ^WeightedTerm %)
+                                     (QueryTermExtractor/getTerms
+                                      (.rewrite (.build query) reader)))))]
+      (doseq [^String field (keys parse-rules)]
+        (let [boolean-or (BooleanQuery$Builder.)
+              boolean-and (BooleanQuery$Builder.)]
 
-    (when-let [terms (seq (set (map #(.getTerm %)
-                                    (QueryTermExtractor/getTerms
-                                     (.rewrite query reader)))))]
-      (doseq [field (keys parse-rules)]
-        (let [boolean-or (BooleanQuery.)
-              boolean-and (BooleanQuery.)]
-
-          (doseq [term terms]
+          (doseq [^String term terms]
             (.add boolean-or
                   (TermQuery. (Term. field term))
                   BooleanClause$Occur/SHOULD)
@@ -487,40 +487,36 @@ Also adds fields for the line and character count of the message."
 
           (let [boost (or (:boost (get parse-rules field))
                           1)]
-            (.setBoost boolean-or boost)
-            (.setBoost boolean-and (* boost 10)))
-
-          (.add query boolean-or BooleanClause$Occur/SHOULD)
-          (.add query boolean-and BooleanClause$Occur/SHOULD))))
+            (.add query (BoostQuery. (.build boolean-or) boost) BooleanClause$Occur/SHOULD)
+            (.add query (BoostQuery. (.build boolean-and) (* boost 10)) BooleanClause$Occur/SHOULD)))))
     (when *log-queries*
-      (println query))
-    query))
+      (println (.build query)))
+    (.build query)))
 
 
 (defn extract-query-options [input]
   (let [option-fragments (re-seq #"\{([^ ]+)\}" input)
-        querystr (reduce (fn [s [option _]] (.replace s option ""))
+        querystr (reduce (fn [s [option _]] (.replace ^String s ^String option ""))
                          input
                          option-fragments)]
     [querystr
-     (into {} (map (fn [[_ option]] (vec (.split option ":" 2)))
+     (into {} (map (fn [[_ option]] (vec (.split ^String option ":" 2)))
                    option-fragments))]))
 
 
 (defn search
   "Perform a search against `index' using `querystr'.  Returns the top
-matching documents."
+  matching documents."
   [indexfile input]
-  (let [searcher (searcher-manager/take indexfile)
+  (let [^IndexSearcher searcher (searcher-manager/take indexfile)
         reader (.getIndexReader searcher)
         [querystr options] (extract-query-options input)]
     (try (doall (result-seq reader
                             (.search searcher
                                      (build-query querystr reader)
-                                     nil
                                      (:max-results @config)
                                      (if (= (options "sort") "date")
-                                       (Sort. (SortField. "date" SortField/STRING true))
+                                       (Sort. (SortField. "date-sort" SortField$Type/STRING true))
                                        Sort/RELEVANCE))))
          (finally (searcher-manager/release indexfile searcher)))))
 
@@ -529,20 +525,20 @@ matching documents."
   "Kick off the search handler."
   [state indexfile port]
   (try
-   (error "Listening for searches on port %d" port)
-   (with-open [server (ServerSocket. port 50 (InetAddress/getByName "127.0.0.1"))
-               client (.accept server)
-               in (reader (.getInputStream client))
-               out (writer (.getOutputStream client))]
-     (.write out (prn-str (search indexfile (.readLine in))))
-     (.write out "\n")
-     (.flush out))
+    (error "Listening for searches on port %d" port)
+    (with-open [server (ServerSocket. port 50 (InetAddress/getByName "127.0.0.1"))
+                client (.accept server)
+                in (reader (.getInputStream client))
+                out (writer (.getOutputStream client))]
+      (.write out (prn-str (search indexfile (.readLine ^java.io.BufferedReader in))))
+      (.write out "\n")
+      (.flush out))
 
-   (catch BindException e
-     (throw (RuntimeException. e)))
-   (catch Throwable e
-     (error "%s" e)
-     (.printStackTrace e)))
+    (catch BindException e
+      (throw (RuntimeException. e)))
+    (catch Throwable e
+      (error "%s" e)
+      (.printStackTrace e)))
   (send-off *agent* handle-searches indexfile port))
 
 
@@ -573,9 +569,9 @@ matching documents."
 
     ;; Handle help and error conditions
     (cond
-     (:help options) (exit 0 (usage summary))
-     (not= (count arguments) 0) (exit 1 (usage summary))
-     errors (exit 1 (error-msg errors)))
+      (:help options) (exit 0 (usage summary))
+      (not= (count arguments) 0) (exit 1 (usage summary))
+      errors (exit 1 (error-msg errors)))
 
     ;; Execute program with options
     (reset! config (read (PushbackReader. (reader (:config-file options)))))
@@ -591,7 +587,7 @@ matching documents."
           searcher (agent nil)
           indexer (agent nil)]
 
-      (send-off searcher handle-searches indexfile (Integer. port))
+      (send-off searcher handle-searches indexfile (Integer/valueOf (long port)))
       (send-off indexer start-indexing indexfile connections)
       (await indexer searcher)))
   )

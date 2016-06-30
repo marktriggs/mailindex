@@ -2,10 +2,10 @@
   (:require [clojure.java.io :refer [file]])
   (:import (org.apache.lucene.store Directory FSDirectory)))
 
-(defn as-directory [thing]
+(defn as-directory ^Directory [thing]
   (if (instance? Directory thing)
     thing
-    (FSDirectory/open (file thing))))
+    (FSDirectory/open (.toPath (file thing)))))
 
 (defn find-first
   "Returns the first item of coll for which (pred item) returns logical true.

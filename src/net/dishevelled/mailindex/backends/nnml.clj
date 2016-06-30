@@ -22,7 +22,7 @@
   [^String msg]
   (try
     (let [f (file msg)
-          buf (byte-array 4096)
+          buf (byte-array 16384)
           out (ByteArrayOutputStream. (.length f))]
       ;; Our initial length is really just a guess here.  We'll be right for
       ;; uncompressed files and wrong for everything else :)

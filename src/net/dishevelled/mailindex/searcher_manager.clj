@@ -1,7 +1,8 @@
 (ns net.dishevelled.mailindex.searcher-manager
   (:require [net.dishevelled.mailindex.utils :as utils])
-  (:import (org.apache.lucene.index IndexReader)
-           (org.apache.lucene.search IndexSearcher))
+  (:import (org.apache.lucene.index DirectoryReader IndexReader)
+           (org.apache.lucene.search IndexSearcher)
+           (org.apache.lucene.store Directory))
   (:refer-clojure :exclude [take]))
 
 
@@ -66,19 +67,20 @@
 (def lock (Object.))
 
 (defn- do-open [path]
-  (swap! on-deck-searchers
-         assoc path (IndexSearcher.
-                     (IndexReader/open
-                      (utils/as-directory path)))))
+  (let [indexreader (DirectoryReader/open (utils/as-directory path))]
+    (swap! on-deck-searchers
+           assoc path {:searcher (IndexSearcher. indexreader)
+                       :reader indexreader})))
 
 
 (defn reopen [path]
   (locking lock
     (when (@on-deck-searchers path)
-      (let [ir (.getIndexReader (@on-deck-searchers path))
-            new-ir (.reopen ir)]
-        (when-not (identical? ir new-ir)
-          (swap! on-deck-searchers assoc path (IndexSearcher. new-ir))
+      (let [^IndexReader ir (:reader (@on-deck-searchers path))
+            ^IndexReader new-ir (DirectoryReader/openIfChanged ir)]
+        (when new-ir
+          (swap! on-deck-searchers assoc path {:searcher (IndexSearcher. new-ir)
+                                               :reader new-ir})
           (.decRef ir))))))
 
 
@@ -86,13 +88,13 @@
   (locking lock
     (when (not (@on-deck-searchers path))
       (do-open path))
-    (let [searcher (@on-deck-searchers path)
-          ir (.getIndexReader searcher)]
+    (let [^IndexSearcher searcher (:searcher (@on-deck-searchers path))
+          ^IndexReader ir (:reader (@on-deck-searchers path))]
       (.incRef ir)
       searcher)))
 
 
-(defn release [path searcher]
+(defn release [path ^IndexSearcher searcher]
   (locking lock
-    (let [ir (.getIndexReader searcher)]
+    (let [^IndexReader ir (.getIndexReader searcher)]
       (.decRef ir))))
