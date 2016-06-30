@@ -282,12 +282,17 @@
 
 (defn index-age
   "Return the mtime of a Lucene index."
-  [indexfile]
-  (let [index (File. (str indexfile "/segments.gen"))
-        index-mtime (.lastModified (file indexfile "segments.gen"))]
-    (if (.exists index)
-      index-mtime
+  [^String indexfile]
+  (let [stat-file (File. (str indexfile "/mailindex.stat"))]
+    (if (.exists stat-file)
+      (Long/valueOf ^String (slurp stat-file))
       nil)))
+
+(defn store-index-age [^String indexfile ^Date date]
+  "Record the mtime of a Lucene index."
+  (let [stat-file (File. (str indexfile "/mailindex.stat"))]
+    (spit stat-file (str (.getTime date)))))
+
 
 
 (defmacro with-writer
@@ -365,12 +370,14 @@
   "Kick off the indexer."
   [state indexfile connections]
   (try
-    (let [last-update (index-age indexfile)]
+    (let [last-update (index-age indexfile)
+          round-start (java.util.Date.)]
       (doseq [connection connections]
         (with-writer indexfile iw
           (index connection
                  ((:new-messages-fn @connection) connection last-update)
-                 iw)))
+                 iw))
+        (store-index-age indexfile round-start))
       (when (time-to-optimise?)
         (doseq [connection connections]
           (do-deletes connection indexfile))))
