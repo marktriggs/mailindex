@@ -2,4 +2,4 @@
 
 cd "`dirname $(realpath $0)`"
 
-java -XX:NewRatio=2 -server -Xms512m -Xmx512m -jar mailindex.jar
+java -XX:NewRatio=2 -server -Xms1g -Xmx1g -jar mailindex.jar
