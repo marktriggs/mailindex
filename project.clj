@@ -3,6 +3,7 @@
                  [org.clojure/tools.cli "0.3.1"]
                  [org.apache.lucene/lucene-core "6.1.0"]
                  [org.apache.lucene/lucene-queryparser "6.1.0"]
+                 [org.apache.lucene/lucene-analyzers-common "6.1.0"]
                  [org.apache.lucene/lucene-highlighter "6.1.0"]
                  [javax.mail/mail "1.4.7"]
                  [org.apache.tika/tika-core "1.5"]
@@ -24,5 +25,5 @@
   :profiles {:dev {:resource-paths ["test/resources"]}}
   :jar-exclusions [#"BCKEY.SF"]
   :global-vars {*warn-on-reflection* true}
-  :aot [net.dishevelled.mailindex]
+  :aot :all
   :main net.dishevelled.mailindex)

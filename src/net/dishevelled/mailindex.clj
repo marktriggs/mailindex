@@ -5,7 +5,8 @@
             [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
             [net.dishevelled.mailindex.utils :as utils])
-  (:import (java.io ByteArrayInputStream File PushbackReader)
+  (:import (net.dishevelled.mailindex MailindexAnalyzer)
+           (java.io ByteArrayInputStream File PushbackReader)
            (java.net BindException InetAddress ServerSocket)
            (java.text SimpleDateFormat)
            (java.util Calendar Date Properties SimpleTimeZone)
@@ -589,5 +590,6 @@
 
       (send-off searcher handle-searches indexfile (Integer/valueOf (long port)))
       (send-off indexer start-indexing indexfile connections)
-      (await indexer searcher)))
-  )
+      (await indexer searcher))))
+
+
