@@ -119,7 +119,8 @@ Otherwise, just search for the subset.")
                                  ;; read as many complete entries as we can
                                  (let (read-result)
                                    (while (setq read-result (ignore-errors (read-from-string buffer)))
-                                     (destructuring-bind (next-entry . offset) read-result
+                                     (let ((next-entry (car read-result))
+                                           (offset (cdr read-result))) read-result
                                        (push (funcall process-entry next-entry)
                                              entries)
                                        (setq buffer (substring buffer offset)))))))
@@ -128,8 +129,8 @@ Otherwise, just search for the subset.")
 
       ;; while the process hasn't finished or there's still stuff in our buffer...
       (while (or (zerop (process-exit-status proc))
-                 (not buffer)
-                 (not (string-match "^)\n+" buffer)))
+                 (and buffer
+                      (not (string-match "^)\n+" buffer))))
         (accept-process-output proc 0 200))
 
       (vconcat entries))))
