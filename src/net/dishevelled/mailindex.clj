@@ -472,7 +472,7 @@
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (doto (MailindexAnalyzer.)
+                                             (doto (StandardAnalyzer.)
                                                (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       (normalcase querystr))
