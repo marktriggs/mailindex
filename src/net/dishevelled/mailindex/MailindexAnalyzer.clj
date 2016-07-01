@@ -25,21 +25,3 @@
                       (StopFilter. stopwords)
                       (MailindexURLFilter.))]
     (Analyzer$TokenStreamComponents. src tokenizer)))
-
-
-;;   @Override
-;;   protected TokenStreamComponents createComponents(final String fieldName) {
-;;     final ClassicTokenizer src = new ClassicTokenizer();
-;;     src.setMaxTokenLength(maxTokenLength);
-;;     TokenStream tok = new ClassicFilter(src);
-;;     tok = new LowerCaseFilter(tok);
-;;     tok = new StopFilter(tok, stopwords);
-;;     return new TokenStreamComponents(src, tok) {
-;;       @Override
-;;       protected void setReader(final Reader reader) {
-;;         src.setMaxTokenLength(ClassicAnalyzer.this.maxTokenLength);
-;;         super.setReader(reader);
-;;       }
-;;     };
-;;   }
-;; }
