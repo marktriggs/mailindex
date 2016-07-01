@@ -303,7 +303,7 @@
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
-                          (doto (IndexWriterConfig. (doto (StandardAnalyzer.)
+                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer.)
                                                       (.setVersion Version/LUCENE_6_1_0)))
                             (.setUseCompoundFile false))))]
          ~@body))))
@@ -472,7 +472,7 @@
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (doto (StandardAnalyzer.)
+                                             (doto (MailindexAnalyzer.)
                                                (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       (normalcase querystr))
