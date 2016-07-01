@@ -468,9 +468,10 @@
   "Construct a Lucene query from `querystr'."
   [querystr reader]
   (let [query (BooleanQuery$Builder.)
+        search-fields (map first (filter (fn [[k v]] (not (:for-sorting v))) parse-rules))
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
-                                             (into-array (keys parse-rules))
+                                             (into-array search-fields)
                                              (doto (StandardAnalyzer.)
                                                (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
