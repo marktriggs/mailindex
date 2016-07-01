@@ -45,13 +45,25 @@
 (defn pending-tokens ^LinkedList [^MailindexURLFilter this]
   (:pending-tokens @(.state this)))
 
-(defn prepare-additional-tokens [^MailindexURLFilter this]
+(defn hostname-permutations [^String s]
+  (let [parts (.split s "\\.")]
+   (reductions (fn [state n] (clojure.string/join "." (drop n parts)))
+               s
+               (range 0 (dec (count parts))))))
+
+(defn add-url-tokens [^MailindexURLFilter this]
   (let [hostname (str (char-term-attribute this))]
     (let [parts (.split hostname "\\.")]
-      (doseq [domain (concat (reductions (fn [state n] (clojure.string/join "." (drop n parts)))
-                                         hostname
-                                         (range 0 (dec (count parts))))
+      (doseq [domain (concat (hostname-permutations hostname)
                              parts)]
+        (.push (pending-tokens this)
+               domain)))))
+
+(defn add-email-tokens [^MailindexURLFilter this]
+  (let [email (str (char-term-attribute this))]
+    (let [[username domain] (.split email "@")]
+      (doseq [domain (concat (hostname-permutations domain)
+                             [username domain])]
         (.push (pending-tokens this)
                domain)))))
 
@@ -68,8 +80,11 @@
 (defn -incrementToken [^MailindexURLFilter this]
   (cond (not (empty? (pending-tokens this))) (emit-pending-token this 0)
         (-> this .input .incrementToken)
-        (if (= (.type (type-attribute this)) "<HOST>")
-          (do (prepare-additional-tokens this)
-              (emit-pending-token this 1))
-          true)
+        (cond (= (.type (type-attribute this)) "<HOST>")
+              (do (add-url-tokens this)
+                  (emit-pending-token this 1))
+              (= (.type (type-attribute this)) "<EMAIL>")
+              (do (add-email-tokens this)
+                  (emit-pending-token this 1))
+              :else true)
         :else false))
