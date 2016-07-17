@@ -63,7 +63,7 @@
   (let [email (str (char-term-attribute this))]
     (let [[username domain] (.split email "@")]
       (doseq [domain (concat (hostname-permutations domain)
-                             [username domain])]
+                             [username domain (str username " " domain) email])]
         (.push (pending-tokens this)
                domain)))))
 

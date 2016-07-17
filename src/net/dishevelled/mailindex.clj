@@ -13,7 +13,7 @@
            (javax.mail Message$RecipientType Part Session)
            (javax.mail.internet InternetAddress MimeMessage
                                 MimeMultipart)
-           (org.apache.lucene.analysis.standard StandardAnalyzer)
+           (org.apache.lucene.analysis.standard ClassicAnalyzer)
            (org.apache.lucene.document DateTools DateTools$Resolution
                                        Document)
            (org.apache.lucene.store Directory)
@@ -472,8 +472,7 @@
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (doto (StandardAnalyzer.)
-                                               (.setVersion Version/LUCENE_6_1_0)))
+                                             (ClassicAnalyzer.))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       (normalcase querystr))
                               reader))]
