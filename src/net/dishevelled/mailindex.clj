@@ -90,7 +90,7 @@
                        (DateTools/dateToString
                         (or (.getSentDate msg)
                             (.getReceivedDate msg))
-                        DateTools$Resolution/DAY))
+                        DateTools$Resolution/SECOND))
            :boost 10
            :for-sorting true}
 
