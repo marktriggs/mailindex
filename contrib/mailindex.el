@@ -153,6 +153,8 @@ Otherwise, just search for the subset.")
   ;; sniff around for headers)
   (setq nnir-retrieve-headers-override-function 'mailindex-retrieve-headers)
 
+  (setq nnir-method-default-engines '((nnml . mailindex)))
+
   (add-to-list 'nnir-engines
                '(mailindex nnir-run-mailindex)))
 

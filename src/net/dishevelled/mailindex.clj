@@ -13,6 +13,7 @@
            (javax.mail Message$RecipientType Part Session)
            (javax.mail.internet InternetAddress MimeMessage
                                 MimeMultipart)
+           (org.apache.lucene.analysis.core KeywordAnalyzer)
            (org.apache.lucene.analysis.standard ClassicAnalyzer)
            (org.apache.lucene.document DateTools DateTools$Resolution
                                        Document)
@@ -135,7 +136,8 @@
 
    "body" {}
 
-   "msgid" {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))}
+   "msgid" {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))
+            :tokenized false}
    })
 
 
@@ -245,7 +247,9 @@
         (if (:for-sorting rule)
           (do (.add doc (fieldpool/stored-field field value))
               (.add doc (fieldpool/sort-field (str field "-sort") value)))
-          (.add doc (fieldpool/tokenized-field field value)))))))
+          (if (:tokenized rule true)
+            (.add doc (fieldpool/tokenized-field field value))
+            (.add doc (fieldpool/untokenized-field field value))))))))
 
 
 (defn parse-message
@@ -303,7 +307,7 @@
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
-                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer.)
+                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer. parse-rules)
                                                       (.setVersion Version/LUCENE_6_1_0)))
                             (.setUseCompoundFile false))))]
          ~@body))))
@@ -414,17 +418,6 @@
               (conj (keys parse-rules) "lines" "chars")))]))
 
 
-(defn normalcase
-  "Normalise the case of a query string."
-  [^String s]
-  (reduce (fn [^String s ^String op]
-            (.replaceAll s (str " " op " ") (str " " (. op toUpperCase) " ")))
-          (.replaceAll (.toLowerCase s)
-                       "\\[([0-9*]+) to ([0-9*]+)\\]"
-                       "[$1 TO $2]")
-          ["and" "or" "not"]))
-
-
 (defn expand-query [query]
   (cond (instance? BooleanQuery query)
         (let [new-query (BooleanQuery$Builder.)]
@@ -468,20 +461,23 @@
   "Construct a Lucene query from `querystr'."
   [querystr reader]
   (let [query (BooleanQuery$Builder.)
-        search-fields (map first (filter (fn [[k v]] (not (:for-sorting v))) parse-rules))
+        search-fields (map first (filter (fn [[k v]] (and (not (:for-sorting v))
+                                                          (not= (:tokenized v) false)))
+                                         parse-rules))
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (ClassicAnalyzer.))
+                                             (doto (MailindexAnalyzer. parse-rules)
+                                               (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
-                                      (normalcase querystr))
+                                      querystr)
                               reader))]
-    (.add query (BoostQuery. all-fields 20) BooleanClause$Occur/MUST)
 
+    (.add query (BoostQuery. all-fields 20) BooleanClause$Occur/MUST)
     (when-let [terms (seq (set (map #(.getTerm ^WeightedTerm %)
                                      (QueryTermExtractor/getTerms
                                       (.rewrite (.build query) reader)))))]
-      (doseq [^String field (keys parse-rules)]
+      (doseq [^String field search-fields]
         (let [boolean-or (BooleanQuery$Builder.)
               boolean-and (BooleanQuery$Builder.)]
 
@@ -498,6 +494,7 @@
             (.add query (BoostQuery. (.build boolean-or) boost) BooleanClause$Occur/SHOULD)
             (.add query (BoostQuery. (.build boolean-and) (* boost 10)) BooleanClause$Occur/SHOULD)))))
     (when *log-queries*
+      (println querystr)
       (println (.build query)))
     (.build query)))
 
@@ -598,5 +595,3 @@
       (send-off searcher handle-searches indexfile (Integer/valueOf (long port)))
       (send-off indexer start-indexing indexfile connections)
       (await indexer searcher))))
-
-

@@ -48,6 +48,10 @@
   "Create a tokenized, stored field."
   (make-field name true true val))
 
+(defn untokenized-field [name val]
+  "Create a tokenized, stored field."
+  (make-field name false false val))
+
 
 (defn tokenized-unstored-field [name val]
   "Create a tokenized, stored field."
