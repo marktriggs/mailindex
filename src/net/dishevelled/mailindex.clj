@@ -307,7 +307,7 @@
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
-                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer. parse-rules)
+                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer. parse-rules {})
                                                       (.setVersion Version/LUCENE_6_1_0)))
                             (.setUseCompoundFile false))))]
          ~@body))))
@@ -467,11 +467,13 @@
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (doto (MailindexAnalyzer. parse-rules)
+                                             (doto (MailindexAnalyzer. parse-rules {:for-query true})
                                                (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       querystr)
                               reader))]
+
+    (.println System/err (str all-fields))
 
     (.add query (BoostQuery. all-fields 20) BooleanClause$Occur/MUST)
     (when-let [terms (seq (set (map #(.getTerm ^WeightedTerm %)

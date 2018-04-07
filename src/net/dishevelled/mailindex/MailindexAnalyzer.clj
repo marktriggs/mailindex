@@ -10,14 +10,14 @@
    :exposes-methods {createComponents parentCreateComponents}
    :init init
    :state state
-   :constructors {[clojure.lang.PersistentHashMap] []}
+   :constructors {[clojure.lang.PersistentHashMap clojure.lang.PersistentArrayMap] []}
    :main false))
 
 
 (def stopwords StopAnalyzer/ENGLISH_STOP_WORDS_SET)
 
-(defn -init [parse-rules]
-  [[stopwords] {:parse-rules parse-rules}])
+(defn -init [parse-rules opts]
+  [[stopwords] {:parse-rules parse-rules :opts opts}])
 
 (defn -createComponents [this ^String fieldName]
   (let [tokenized (-> (:parse-rules (.state this))
@@ -28,7 +28,8 @@
                  (.setMaxTokenLength 255))
            tokenizer (-> (ClassicFilter. src)
                          (LowerCaseFilter.)
-                         (StopFilter. stopwords)
-                         (MailindexURLFilter.))]
-       (Analyzer$TokenStreamComponents. src tokenizer))
+                         (StopFilter. stopwords))]
+       (Analyzer$TokenStreamComponents. src (if (:for-query (or (:opts (.state this)) {}))
+                                              tokenizer
+                                              (MailindexURLFilter. tokenizer))))
      (Analyzer$TokenStreamComponents. (KeywordTokenizer.)))))
