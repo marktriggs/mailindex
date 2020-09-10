@@ -85,6 +85,11 @@
             "@" " "))
 
 
+(defn sanitise-message-id [^String s]
+  (if s
+    (.replaceAll s "[ \t\n\r]" "")
+    s))
+
 (def parse-rules
   {
    "date" {:value-fn (fn [^MimeMessage msg]
@@ -136,7 +141,7 @@
 
    "body" {}
 
-   "msgid" {:value-fn (fn [^MimeMessage msg] (.getMessageID msg))
+   "msgid" {:value-fn (fn [^MimeMessage msg] (sanitise-message-id (.getMessageID msg)))
             :tokenized false}
    })
 
