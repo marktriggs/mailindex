@@ -2,6 +2,7 @@
   (:require [clojure.java.io :refer [file reader writer]]
             [clojure.string :refer [join]]
             [clojure.tools.cli :refer [parse-opts]]
+            [clojure.data.json :as json]
             [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
             [net.dishevelled.mailindex.utils :as utils])
@@ -522,15 +523,18 @@
   [indexfile input]
   (let [^IndexSearcher searcher (searcher-manager/take indexfile)
         reader (.getIndexReader searcher)
-        [querystr options] (extract-query-options input)]
-    (try (doall (result-seq reader
-                            (.search searcher
-                                     (build-query querystr reader)
-                                     (:max-results @config)
-                                     (if (= (options "sort") "date")
-                                       (Sort. (SortField. "date-sort" SortField$Type/STRING true))
-                                       Sort/RELEVANCE))))
-         (finally (searcher-manager/release indexfile searcher)))))
+        [querystr options] (extract-query-options input)
+        results (try (doall (result-seq reader
+                                        (.search searcher
+                                                 (build-query querystr reader)
+                                                 (:max-results @config)
+                                                 (if (= (options "sort") "date")
+                                                   (Sort. (SortField. "date-sort" SortField$Type/STRING true))
+                                                   Sort/RELEVANCE))))
+                     (finally (searcher-manager/release indexfile searcher)))]
+    (if (= (options "format") "json")
+      (json/write-str results)
+      (prn-str results))))
 
 
 (defn handle-searches
@@ -542,7 +546,7 @@
                 client (.accept server)
                 in (reader (.getInputStream client))
                 out (writer (.getOutputStream client))]
-      (.write out (prn-str (search indexfile (.readLine ^java.io.BufferedReader in))))
+      (.write out (search indexfile (.readLine ^java.io.BufferedReader in)))
       (.write out "\n")
       (.flush out))
 
