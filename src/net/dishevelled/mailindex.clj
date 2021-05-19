@@ -25,7 +25,7 @@
                                        Document)
            (org.apache.lucene.store Directory)
            (org.apache.lucene.index DirectoryReader IndexReader IndexWriter
-                                    IndexWriterConfig MultiFields Term)
+                                    IndexWriterConfig MultiBits Term)
            (org.apache.lucene.queryparser.classic MultiFieldQueryParser
                                                   QueryParser$Operator)
            (org.apache.lucene.search IndexSearcher BooleanClause$Occur
@@ -310,7 +310,7 @@
 (defn base-analyzer ^CustomAnalyzer$Builder []
   (-> (CustomAnalyzer/builder)
       (.withTokenizer "classic" (java.util.HashMap.))
-      (.addTokenFilter "standard" (java.util.HashMap.))
+      (.addTokenFilter "classic" (java.util.HashMap.))
       (.addTokenFilter "lowercase" (java.util.HashMap.))
       (.addTokenFilter "stop" (java.util.HashMap.))))
 
@@ -335,7 +335,7 @@
                    (doto (IndexWriter.
                           dir#
                           (doto (IndexWriterConfig. (doto (build-analyzer :index)
-                                                      (.setVersion Version/LUCENE_6_1_0)))
+                                                      (.setVersion Version/LUCENE_8_8_2)))
                             (.setUseCompoundFile false))))]
          ~@body))))
 
@@ -346,7 +346,7 @@
   (debug "Starting a deletes run now")
   (with-open [reader ^IndexReader (DirectoryReader/open
                                    (utils/as-directory indexfile))]
-    (let [live-docs ^Bits (MultiFields/getLiveDocs reader)]
+    (let [live-docs ^Bits (MultiBits/getLiveDocs reader)]
       (with-writer indexfile writer
         (doseq [chunk (partition-all 1000 (range (.maxDoc reader)))]
           (let [doclist (into {}
@@ -368,7 +368,7 @@
   "Adds `messages' to an index using IndexWriter `iw'."
   [connection messages iw]
   (let [starttime (System/currentTimeMillis)
-        per-thread-batch-size 50
+        per-thread-batch-size 96
         cnt (atom 0)]
     (doseq [batch (partition-all (* per-thread-batch-size (.availableProcessors (Runtime/getRuntime))) messages)]
       (dorun (pmap (fn [work]
@@ -493,7 +493,7 @@
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
                                              (doto (build-analyzer :query)
-                                               (.setVersion Version/LUCENE_6_1_0)))
+                                               (.setVersion Version/LUCENE_8_8_2)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       querystr)
                               reader))]

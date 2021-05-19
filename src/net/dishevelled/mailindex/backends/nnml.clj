@@ -14,7 +14,7 @@
 (defn input-stream-for-file [file]
   (let [fis (FileInputStream. file)]
     (if (.endsWith (.getName file) ".gz")
-      (GZIPInputStream. fis)
+      (GZIPInputStream. fis 16384)
       fis)))
 
 (defn- message-bytes
@@ -100,9 +100,9 @@
                           (clojure.set/union seen-messages new-messages)))))
 
     (pmap (fn [msg]
-           {:id (filename-to-id base msg)
-            :content (message-bytes msg)})
-         new-messages)))
+            {:id (filename-to-id base msg)
+             :content (message-bytes msg)})
+          new-messages)))
 
 
 
