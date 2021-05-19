@@ -26,5 +26,5 @@
   :profiles {:dev {:resource-paths ["test/resources"]}}
   :jar-exclusions [#"BCKEY.SF"]
   :global-vars {*warn-on-reflection* true}
-  :aot [net.dishevelled.mailindex.MailindexURLFilter net.dishevelled.mailindex.MailindexAnalyzer net.dishevelled.mailindex]
+  :aot [net.dishevelled.mailindex.MailindexURLFilter net.dishevelled.mailindex.MailindexURLFilterFactory net.dishevelled.mailindex]
   :main net.dishevelled.mailindex)

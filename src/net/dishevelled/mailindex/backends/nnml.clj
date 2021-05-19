@@ -99,7 +99,7 @@
              (set (remove (fn [msg] (not (messages msg)))
                           (clojure.set/union seen-messages new-messages)))))
 
-    (map (fn [msg]
+    (pmap (fn [msg]
            {:id (filename-to-id base msg)
             :content (message-bytes msg)})
          new-messages)))

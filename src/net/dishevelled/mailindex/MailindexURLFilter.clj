@@ -46,10 +46,12 @@
   (:pending-tokens @(.state this)))
 
 (defn hostname-permutations [^String s]
-  (let [parts (.split s "\\.")]
-   (reductions (fn [state n] (clojure.string/join "." (drop n parts)))
-               s
-               (range 0 (dec (count parts))))))
+  (let [parts (java.util.Arrays/asList (.split s "\\."))
+        len (.size parts)
+        result (reductions (fn [state n] (clojure.string/join "." (.subList parts n len)))
+                s
+                (range 0 (dec len)))]
+    result))
 
 (defn add-url-tokens [^MailindexURLFilter this]
   (let [hostname (str (char-term-attribute this))]

@@ -6,8 +6,7 @@
             [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
             [net.dishevelled.mailindex.utils :as utils])
-  (:import (net.dishevelled.mailindex MailindexAnalyzer)
-           (java.io ByteArrayInputStream File PushbackReader)
+  (:import (java.io ByteArrayInputStream File PushbackReader)
            (java.net BindException InetAddress ServerSocket)
            (java.text SimpleDateFormat)
            (java.util Calendar Date Properties SimpleTimeZone)
@@ -15,7 +14,12 @@
            (javax.mail.internet InternetAddress MimeMessage
                                 MimeMultipart)
            (org.apache.lucene.analysis.core KeywordAnalyzer)
+           (org.apache.lucene.analysis.custom CustomAnalyzer)
            (org.apache.lucene.analysis.standard ClassicAnalyzer)
+           (org.apache.lucene.analysis.standard ClassicTokenizer ClassicFilter)
+           (org.apache.lucene.analysis.miscellaneous PerFieldAnalyzerWrapper)
+           (org.apache.lucene.analysis.core StopAnalyzer LowerCaseFilter StopFilter KeywordTokenizer)
+           (net.dishevelled.mailindex MailindexURLFilterFactory)
            (org.apache.lucene.document DateTools DateTools$Resolution
                                        Document)
            (org.apache.lucene.store Directory)
@@ -262,9 +266,6 @@
   "Produce a Lucene document from an email message."
   [msg connection]
   (let [^Document doc (Document.)]
-
-    (fieldpool/reset)
-
     (let [source (-> @connection :config :name)]
       (.add doc (fieldpool/stored-field "group" (-> msg :id :group)))
       (.add doc (fieldpool/stored-field "num" (-> msg :id :num)))
@@ -305,6 +306,25 @@
 
 
 
+(defn base-analyzer []
+  (-> (CustomAnalyzer/builder)
+      (.withTokenizer "classic" (java.util.HashMap.))
+      (.addTokenFilter "standard" (java.util.HashMap.))
+      (.addTokenFilter "lowercase" (java.util.HashMap.))
+      (.addTokenFilter "stop" (java.util.HashMap.))))
+
+(defn build-analyzer [role]
+  (let [^java.util.HashMap per-field-analyzers (java.util.HashMap.)]
+
+    (when (= role :index)
+      (.put per-field-analyzers "from_tokens"
+            (-> (base-analyzer)
+                (.addTokenFilter MailindexURLFilterFactory (java.util.HashMap.))
+                .build)))
+
+    (PerFieldAnalyzerWrapper. (.build (base-analyzer)) per-field-analyzers)))
+
+
 (defmacro with-writer
   "Open a Lucene IndexWriter on `index' bound to `var' and evaluate `body'"
   [index var & body]
@@ -313,7 +333,7 @@
        (with-open [^IndexWriter ~var
                    (doto (IndexWriter.
                           dir#
-                          (doto (IndexWriterConfig. (doto (MailindexAnalyzer. parse-rules {})
+                          (doto (IndexWriterConfig. (doto (build-analyzer :index)
                                                       (.setVersion Version/LUCENE_6_1_0)))
                             (.setUseCompoundFile false))))]
          ~@body))))
@@ -345,29 +365,25 @@
 
 (defn index
   "Adds `messages' to an index using IndexWriter `iw'."
-  [connection messages iw & [cnt starttime]]
-  (let [cnt (or cnt 0)
-        starttime (or starttime (System/currentTimeMillis))]
-    (when (seq messages)
-      (try
-        (when (zero? (mod cnt 1000))
-          (error "\nmsgs/sec: %.2f"
-                 (float (/ cnt
-                           (inc (/ (- (System/currentTimeMillis)
-                                      starttime)
-                                   1000))))))
-        (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
-                (index-message iw (try (parse-message (first messages) connection)
-                                       (catch Exception e
-                                         (debug "\nMessage failed to index: %s"
-                                                (first messages))
-                                         (throw e)))))
-        (catch Throwable e
-          (debug "Agent caught throwable: %s" e)
-          ;; (.printStackTrace e)
-          ))
-      (recur connection (rest messages) iw [(inc (or cnt 0)) starttime]))))
-
+  [connection messages iw]
+  (let [starttime (System/currentTimeMillis)
+        per-thread-batch-size 50
+        cnt (atom 0)]
+    (doseq [batch (partition-all (* per-thread-batch-size (.availableProcessors (Runtime/getRuntime))) messages)]
+      (dorun (pmap (fn [work]
+                     (fieldpool/reset)
+                     (doseq [message work]
+                       (try
+                         (index-message iw (parse-message message connection))
+                         (catch Throwable e
+                           (debug "Message failed to index: %s" e)))))
+                   (partition-all per-thread-batch-size batch)))
+      (swap! cnt + (count batch))
+      (error "\nmsgs/sec: %.2f"
+             (float (/ (deref cnt)
+                       (inc (/ (- (System/currentTimeMillis)
+                                  starttime)
+                               1000))))))))
 
 
 (defn time-to-optimise?
@@ -401,7 +417,7 @@
 
     (catch Throwable e
       (debug "%s" e)
-      ;; (.printStackTrace e)
+      (.printStackTrace e)
       )))
 
 
@@ -475,7 +491,7 @@
         all-fields (expand-query
                     (.rewrite (.parse (doto (MultiFieldQueryParser.
                                              (into-array search-fields)
-                                             (doto (MailindexAnalyzer. parse-rules {:for-query true})
+                                             (doto (build-analyzer :query)
                                                (.setVersion Version/LUCENE_6_1_0)))
                                         (.setDefaultOperator QueryParser$Operator/AND))
                                       querystr)
