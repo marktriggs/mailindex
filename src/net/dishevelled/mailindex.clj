@@ -13,8 +13,9 @@
            (javax.mail Message$RecipientType Part Session)
            (javax.mail.internet InternetAddress MimeMessage
                                 MimeMultipart)
+           (org.apache.lucene.analysis Analyzer)
            (org.apache.lucene.analysis.core KeywordAnalyzer)
-           (org.apache.lucene.analysis.custom CustomAnalyzer)
+           (org.apache.lucene.analysis.custom CustomAnalyzer CustomAnalyzer$Builder)
            (org.apache.lucene.analysis.standard ClassicAnalyzer)
            (org.apache.lucene.analysis.standard ClassicTokenizer ClassicFilter)
            (org.apache.lucene.analysis.miscellaneous PerFieldAnalyzerWrapper)
@@ -306,14 +307,14 @@
 
 
 
-(defn base-analyzer []
+(defn base-analyzer ^CustomAnalyzer$Builder []
   (-> (CustomAnalyzer/builder)
       (.withTokenizer "classic" (java.util.HashMap.))
       (.addTokenFilter "standard" (java.util.HashMap.))
       (.addTokenFilter "lowercase" (java.util.HashMap.))
       (.addTokenFilter "stop" (java.util.HashMap.))))
 
-(defn build-analyzer [role]
+(defn ^Analyzer build-analyzer [role]
   (let [^java.util.HashMap per-field-analyzers (java.util.HashMap.)]
 
     (when (= role :index)
@@ -564,7 +565,7 @@
                 client (.accept server)
                 in (reader (.getInputStream client))
                 out (writer (.getOutputStream client))]
-      (.write out (search indexfile (.readLine ^java.io.BufferedReader in)))
+      (.write out ^String (search indexfile (.readLine ^java.io.BufferedReader in)))
       (.write out "\n")
       (.flush out))
 

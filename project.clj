@@ -1,5 +1,5 @@
 (defproject mailindex "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.6.0"]
+  :dependencies [[org.clojure/clojure "1.10.3"]
                  [org.clojure/tools.cli "0.3.1"]
                  [org.clojure/data.json "1.0.0"]
                  [org.apache.lucene/lucene-core "6.1.0"]
