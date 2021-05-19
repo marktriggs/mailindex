@@ -204,9 +204,9 @@
    (try
      (if (and (> (.getSize part) MAX_PART_BYTES)
               (not (re-find #"^multipart/" (.toLowerCase (.getContentType part)))))
-       (do (println (format "Skipping giant part: (type: %s) %s"
-                            (.toLowerCase (.getContentType part))
-                            (.getSize part)))
+       (do (debug "Skipping giant part: (type: %s) %s"
+                  (.toLowerCase (.getContentType part))
+                  (.getSize part))
            [])
        (let [content (.getContent part)]
          (condp re-find (.toLowerCase (.getContentType part))
@@ -247,7 +247,7 @@
     (when (:value-fn rule)
       (when-let [value (try ((:value-fn rule) msg)
                             (catch Exception e
-                              (error "Warning: missing value for field '%s': %s"
+                              (debug "Warning: missing value for field '%s': %s"
                                      field e)
                               nil))]
         (if (:for-sorting rule)
@@ -359,12 +359,13 @@
         (chatty (format "[%d] Parsing message %s" (or cnt 0) (:id (first messages)))
                 (index-message iw (try (parse-message (first messages) connection)
                                        (catch Exception e
-                                         (error "\nMessage failed to index: %s"
+                                         (debug "\nMessage failed to index: %s"
                                                 (first messages))
                                          (throw e)))))
         (catch Throwable e
-          (error "Agent got throwable: %s" e)
-          (.printStackTrace e)))
+          (debug "Agent caught throwable: %s" e)
+          ;; (.printStackTrace e)
+          ))
       (recur connection (rest messages) iw [(inc (or cnt 0)) starttime]))))
 
 
@@ -399,8 +400,9 @@
     (send-off *agent* start-indexing indexfile connections)
 
     (catch Throwable e
-      (error "%s" e)
-      (.printStackTrace e))))
+      (debug "%s" e)
+      ;; (.printStackTrace e)
+      )))
 
 
 
