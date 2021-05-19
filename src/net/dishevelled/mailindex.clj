@@ -5,7 +5,9 @@
             [clojure.data.json :as json]
             [net.dishevelled.mailindex.fieldpool :as fieldpool]
             [net.dishevelled.mailindex.searcher-manager :as searcher-manager]
-            [net.dishevelled.mailindex.utils :as utils])
+            [net.dishevelled.mailindex.utils :as utils]
+            [com.climate.claypoole :as cp]
+            )
   (:import (java.io ByteArrayInputStream File PushbackReader)
            (java.net BindException InetAddress ServerSocket)
            (java.text SimpleDateFormat)
@@ -368,23 +370,25 @@
   "Adds `messages' to an index using IndexWriter `iw'."
   [connection messages iw]
   (let [starttime (System/currentTimeMillis)
-        per-thread-batch-size 96
-        cnt (atom 0)]
-    (doseq [batch (partition-all (* per-thread-batch-size (.availableProcessors (Runtime/getRuntime))) messages)]
-      (dorun (pmap (fn [work]
-                     (fieldpool/reset)
-                     (doseq [message work]
-                       (try
-                         (index-message iw (parse-message message connection))
-                         (catch Throwable e
-                           (debug "Message failed to index: %s" e)))))
-                   (partition-all per-thread-batch-size batch)))
-      (swap! cnt + (count batch))
-      (error "\nmsgs/sec: %.2f"
-             (float (/ (deref cnt)
-                       (inc (/ (- (System/currentTimeMillis)
-                                  starttime)
-                               1000))))))))
+        per-thread-batch-size 64
+        cnt (atom 0)
+        report (fn [] (error "\nmsgs/sec: %.2f"
+                             (float (/ (deref cnt)
+                                       (inc (/ (- (System/currentTimeMillis)
+                                                  starttime)
+                                               1000))))))]
+    (cp/with-shutdown! [pool (cp/threadpool (cp/ncpus))]
+      (cp/pdoseq pool [work (partition-all per-thread-batch-size messages)]
+                 (fieldpool/reset)
+                 (doseq [message work]
+                   (try
+                     (index-message iw (parse-message message connection))
+                     (catch Throwable e
+                       (debug "Message failed to index: %s" e))))
+                 (swap! cnt + (count work))
+                 (when (< (Math/random) 0.05)
+                   (report))))
+    (report)))
 
 
 (defn time-to-optimise?

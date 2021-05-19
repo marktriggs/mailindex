@@ -6,6 +6,7 @@
                  [org.apache.lucene/lucene-queryparser "8.8.2"]
                  [org.apache.lucene/lucene-analyzers-common "8.8.2"]
                  [org.apache.lucene/lucene-highlighter "8.8.2"]
+                 [com.climate/claypoole "1.1.4"]
                  [javax.mail/mail "1.4.7"]
                  [org.apache.tika/tika-core "1.5"]
                  [org.apache.tika/tika-parsers "1.5"
