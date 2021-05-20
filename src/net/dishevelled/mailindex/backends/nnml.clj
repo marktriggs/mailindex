@@ -17,21 +17,30 @@
       (GZIPInputStream. fis 16384)
       fis)))
 
+(def SMALL-FILE-SIZE (* 8 1024 1024))
+
 (defn- message-bytes
   "Return the bytes of a message."
   [^String msg]
   (try
-    (let [f (file msg)
-          buf (byte-array 16384)
-          out (ByteArrayOutputStream. (.length f))]
-      ;; Our initial length is really just a guess here.  We'll be right for
-      ;; uncompressed files and wrong for everything else :)
-      (with-open [^InputStream is (input-stream-for-file f)]
-        (loop [len (.read is buf)]
-          (when (>= len 0)
-            (.write out buf 0 len)
-            (recur (.read is buf)))))
-      (.toByteArray out))
+    (let [f (file msg)]
+      (cond
+        ;; Straight into a byte buffer with no copying if it's small
+        (and (not (.endsWith msg ".gz")) (<= (.length f) SMALL-FILE-SIZE))
+        (java.nio.file.Files/readAllBytes (.toPath f))
+
+        ;; Stream it otherwise
+        :else
+        (let [buf (byte-array 16384)
+              out (ByteArrayOutputStream. (.length f))]
+          ;; Our initial length is really just a guess here.  We'll be right for
+          ;; uncompressed files and wrong for everything else :)
+          (with-open [^InputStream is (input-stream-for-file f)]
+            (loop [len (.read is buf)]
+              (when (>= len 0)
+                (.write out buf 0 len)
+                (recur (.read is buf)))))
+          (.toByteArray out))))
     (catch IOException _
       (byte-array 0))))
 
