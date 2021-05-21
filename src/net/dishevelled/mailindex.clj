@@ -265,6 +265,8 @@
             (.add doc (fieldpool/untokenized-field field value))))))))
 
 
+(def mail-session (Session/getDefaultInstance (Properties.)))
+
 (defn parse-message
   "Produce a Lucene document from an email message."
   [msg connection]
@@ -279,7 +281,7 @@
                                                 (-> msg :id :num)
                                                 source))))
 
-    (let [parsed-msg (MimeMessage. (Session/getDefaultInstance (Properties.))
+    (let [parsed-msg (MimeMessage. mail-session
                                    (ByteArrayInputStream. (:content msg)))]
       (load-headers doc parsed-msg)
       (load-body doc parsed-msg))
