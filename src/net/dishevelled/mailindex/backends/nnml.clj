@@ -1,10 +1,14 @@
 (ns net.dishevelled.mailindex.backends.nnml
   (:require [clojure.java.io :refer [file reader]]
             [net.dishevelled.mailindex :refer [debug]]
-            [clojure.set])
+            [clojure.set]
+            [com.climate.claypoole :as cp]
+            [com.climate.claypoole.lazy :as cp-lazy])
   (:import (java.io InputStream FileInputStream ByteArrayOutputStream IOException)
            (java.util Date)
            (java.util.zip GZIPInputStream)))
+
+(def nnml-pool (cp/threadpool 16))
 
 (defn- mtime-to-days [mtime]
   (let [now (.getTime (Date.))]
@@ -108,10 +112,10 @@
              (set (remove (fn [msg] (not (messages msg)))
                           (clojure.set/union seen-messages new-messages)))))
 
-    (pmap (fn [msg]
-            {:id (filename-to-id base msg)
-             :content (message-bytes msg)})
-          new-messages)))
+    (cp-lazy/upmap nnml-pool (fn [msg]
+                               {:id (filename-to-id base msg)
+                                :content (message-bytes msg)})
+                   new-messages)))
 
 
 
