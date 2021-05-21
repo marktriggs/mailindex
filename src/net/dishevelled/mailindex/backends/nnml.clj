@@ -27,18 +27,17 @@
   "Return the bytes of a message."
   [^String msg]
   (try
-    (let [f (file msg)]
+    (let [f (file msg)
+          compressed (.endsWith msg ".gz")]
       (cond
         ;; Straight into a byte buffer with no copying if it's small
-        (and (not (.endsWith msg ".gz")) (<= (.length f) SMALL-FILE-SIZE))
+        (and (not compressed) (<= (.length f) SMALL-FILE-SIZE))
         (java.nio.file.Files/readAllBytes (.toPath f))
 
         ;; Stream it otherwise
         :else
         (let [buf (byte-array 16384)
-              out (ByteArrayOutputStream. (.length f))]
-          ;; Our initial length is really just a guess here.  We'll be right for
-          ;; uncompressed files and wrong for everything else :)
+              out (ByteArrayOutputStream. (* (if compressed 3 1) (.length f)))]
           (with-open [^InputStream is (input-stream-for-file f)]
             (loop [len (.read is buf)]
               (when (>= len 0)
