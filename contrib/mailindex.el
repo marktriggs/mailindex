@@ -55,13 +55,13 @@
   "If true, ignore the list of groups nnir passes and search all groups.
 Otherwise, just search for the subset.")
 
-(defvar mailindex-headers nil
+(defvar mailindex-headers-group-to-headers (make-hash-table :test 'equal)
   "Temporary storage for the headers provided by mailindex")
 
 
 (defun mailindex-to-nov (id headers)
   (make-full-mail-header id
-                         (getf headers :subject)
+                         (replace-regexp-in-string (regexp-opt (loop for i from 0 below 32 collect (string i))) " " (or (getf headers :subject) ""))
                          (getf headers :from)
                          (getf headers :date)
                          (or (getf headers :msgid)
@@ -101,13 +101,11 @@ Otherwise, just search for the subset.")
                                            (string-to-number (aref entry 1)))
                                           (score (aref entry 2))
                                           (headers (aref entry 3)))
-                                      (push (cons group-name
-                                                  (mailindex-to-nov article-number
-                                                                    headers))
-                                            mailindex-headers)
+                                      (push (mailindex-to-nov article-number headers)
+                                            (gethash group-name mailindex-headers-group-to-headers))
                                       (vector group-name article-number score)))))
 
-      (setq mailindex-headers '())
+      (clrhash mailindex-headers-group-to-headers)
 
       (set-process-filter proc (lambda (proc output)
                                  ;; Load the output into our read buffer, discarding the leading "(" if this is our first chunk of output.
@@ -142,9 +140,8 @@ Otherwise, just search for the subset.")
                                        (list nil artgroup))
     (with-current-buffer nntp-server-buffer
       (erase-buffer)
-      (loop for header in mailindex-headers
-            when (string= (first header) group)
-            do (nnheader-insert-nov (cdr header)))))
+      (dolist (header (gethash group mailindex-headers-group-to-headers nil))
+        (nnheader-insert-nov header))))
   'nov)
 
 
@@ -160,6 +157,15 @@ Otherwise, just search for the subset.")
 
 
 (mailindex-initialise)
+
+
+;;; Support for emacs 28
+(defclass mailindex () ())
+
+(cl-defmethod gnus-search-run-search ((engine mailindex) srv query groups)
+  (setq foo (nnir-run-mailindex query srv groups)))
+
+
 
 
 (provide 'mailindex)

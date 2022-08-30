@@ -327,6 +327,16 @@
                 (.addTokenFilter MailindexURLFilterFactory (java.util.HashMap.))
                 .build)))
 
+    (when (= role :index)
+      (.put per-field-analyzers "body"
+            (-> (base-analyzer)
+                (.addTokenFilter MailindexURLFilterFactory (java.util.HashMap.))
+                .build)))
+
+    (when (= role :query)
+      (.put per-field-analyzers "group" (KeywordAnalyzer.))
+      (.put per-field-analyzers "msgid" (KeywordAnalyzer.)))
+
     (PerFieldAnalyzerWrapper. (.build (base-analyzer)) per-field-analyzers)))
 
 
