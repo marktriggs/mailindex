@@ -59,9 +59,11 @@ Otherwise, just search for the subset.")
   "Temporary storage for the headers provided by mailindex")
 
 
+(defvar mailindex-unprintable-regex (regexp-opt (loop for i from 0 below 32 collect (string i))))
+
 (defun mailindex-to-nov (id headers)
   (make-full-mail-header id
-                         (replace-regexp-in-string (regexp-opt (loop for i from 0 below 32 collect (string i))) " " (or (getf headers :subject) ""))
+                         (replace-regexp-in-string mailindex-unprintable-regex " " (or (getf headers :subject) ""))
                          (getf headers :from)
                          (getf headers :date)
                          (or (getf headers :msgid)
@@ -93,7 +95,10 @@ Otherwise, just search for the subset.")
     (lexical-let* ((proc (open-network-stream "mailindex" nil
                                               mailindex-host
                                               mailindex-port))
-                   (buffer nil)
+                   (buffer (with-current-buffer (get-buffer-create " *mailindex result*")
+                             (erase-buffer)
+                             (current-buffer)))
+                   (buffer-read-pos 2)  ; skip the opening (
                    (entries ())
                    (process-entry (lambda (entry)
                                     (let ((group-name (aref entry 0))
@@ -109,27 +114,34 @@ Otherwise, just search for the subset.")
 
       (set-process-filter proc (lambda (proc output)
                                  ;; Load the output into our read buffer, discarding the leading "(" if this is our first chunk of output.
-                                 (when (> (length output) 0)
-                                   (if buffer
-                                       (setq buffer (concat buffer output))
-                                     (setq buffer (substring output 1))))
+                                 (with-current-buffer buffer
+                                   (goto-char (point-max))
 
-                                 ;; read as many complete entries as we can
-                                 (let (read-result)
-                                   (while (setq read-result (ignore-errors (read-from-string buffer)))
-                                     (let ((next-entry (car read-result))
-                                           (offset (cdr read-result))) read-result
-                                       (push (funcall process-entry next-entry)
-                                             entries)
-                                       (setq buffer (substring buffer offset)))))))
+                                   (when (> (length output) 0)
+                                     (insert output))
+
+                                  ;; read as many complete entries as we can
+                                   (goto-char buffer-read-pos)
+                                   (let (read-result)
+                                     (condition-case nil
+                                         (while (setq next-entry (read buffer))
+                                           (push (funcall process-entry next-entry)
+                                                 entries)
+                                           (setq buffer-read-pos (point)))
+                                       (error nil))))))
 
       (process-send-string proc search-string)
 
       ;; while the process hasn't finished or there's still stuff in our buffer...
-      (while (or (zerop (process-exit-status proc))
-                 (and buffer
-                      (not (string-match "^)\n+" buffer))))
-        (accept-process-output proc 0 200))
+      (unwind-protect
+          (while (or (zerop (process-exit-status proc))
+                     (with-current-buffer buffer
+                       (goto-char buffer-read-pos)
+                       (not (looking-at ")"))))
+            (accept-process-output proc 0 200))
+        (set-process-filter proc nil)
+        (ignore-errors (kill-process proc))
+        (with-current-buffer buffer (erase-buffer)))
 
       (vconcat entries))))
 
