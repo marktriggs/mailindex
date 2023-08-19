@@ -89,11 +89,11 @@
   "Find any messages that have been updated"
   [connection & [index-mtime]]
   (let [base (-> @connection :config :base)
-        cmd ["find" "-L" base "(" "-type" "f" "-o" "-type" "l" ")"]
         cmd (if index-mtime
-              (concat cmd ["-mtime" (str "-" (inc
-                                              (mtime-to-days index-mtime)))])
-              cmd)
+              (let [mtime (inc (mtime-to-days index-mtime))]
+                ["find" "-L" base "-maxdepth" "1" "-type" "d" "-mtime" (str "-" mtime)
+                 "-exec" "parallel" "find" "{.}" "\\(" "-type" "f" "-o" "-type" "l" "\\)" "-mtime" (str "-" mtime) ":::" "{}" "+"])
+              ["find" "-L" base "(" "-type" "f" "-o" "-type" "l" ")"])
         messages (set (filter #(re-find #"/[0-9]+(\.gz)?$" %)
                               (line-seq (reader (.. Runtime
                                                     getRuntime
